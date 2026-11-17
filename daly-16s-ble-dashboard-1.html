@@ -1,0 +1,1766 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#14917a">\n<meta name="description" content="Read-only DALY 16S 100A BLE battery monitoring dashboard">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<title>DALY 16S Battery Monitor</title>
+<style>
+/* Layout: one phone-width column that mirrors the Daly Smart BMS app (green header, white cards,
+   orange OFF / green ON), plus a Trend tab and a Setup tab in place of the app's Control tab. */
+:root{
+  --bg:#eef2f1; --card:#ffffff; --fg:#17211e; --muted:#5d6c67; --faint:#7d8c87;
+  --line:#e2e8e6; --brand:#14917a; --on-brand:#ffffff; --chip:#edf2f4;
+  --on:#1c9a5b; --off:#e8820e; --crit:#d03b3b; --warn:#c98500; --info:#7d8c87;
+  --cell-line:#3a4750; --cell-fill:rgba(28,154,91,.20);
+  --g1:#a3d86f; --g2:#3fa34d; --track:#e3eae7;
+  --series:#2a78d6; --grid:#e1e0d9; --axis:#c3c2b7;
+  --shadow:0 1px 2px rgba(10,30,25,.07);
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0d1312; --card:#16201e; --fg:#e8f0ed; --muted:#9db0aa; --faint:#8a9c96;
+    --line:#243230; --brand:#0f6d5b; --on-brand:#ffffff; --chip:#1e2a28;
+    --on:#48c987; --off:#f4a24d; --crit:#ff7070; --warn:#f2b43a; --info:#8a9c96;
+    --cell-line:#9fb1ab; --cell-fill:rgba(72,201,135,.24);
+    --g1:#8ad170; --g2:#2f8f45; --track:#24322f;
+    --series:#3987e5; --grid:#26332f; --axis:#38453f;
+    --shadow:none;
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0d1312; --card:#16201e; --fg:#e8f0ed; --muted:#9db0aa; --faint:#8a9c96;
+  --line:#243230; --brand:#0f6d5b; --on-brand:#ffffff; --chip:#1e2a28;
+  --on:#48c987; --off:#f4a24d; --crit:#ff7070; --warn:#f2b43a; --info:#8a9c96;
+  --cell-line:#9fb1ab; --cell-fill:rgba(72,201,135,.24);
+  --g1:#8ad170; --g2:#2f8f45; --track:#24322f;
+  --series:#3987e5; --grid:#26332f; --axis:#38453f;
+  --shadow:none;
+  color-scheme:dark;
+}
+
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{
+  margin:0; background:var(--bg); color:var(--fg);
+  font:14px/1.4 Roboto,"Segoe UI",system-ui,-apple-system,"Helvetica Neue",Arial,sans-serif;
+}
+a{color:inherit}
+:focus-visible{outline:2px solid var(--brand); outline-offset:2px}
+[hidden]{display:none!important}
+
+.app{max-width:560px; margin:0 auto; min-height:100vh; min-height:100dvh}
+
+/* ---------- header ---------- */
+.top{
+  position:sticky; top:0; z-index:20; background:var(--brand); color:var(--on-brand);
+  display:flex; align-items:center; gap:12px;
+  padding:calc(10px + env(safe-area-inset-top,0px)) max(16px,env(safe-area-inset-right,0px)) 10px max(16px,env(safe-area-inset-left,0px));
+}
+.logo{width:40px; height:40px; flex:none}
+.who{margin-left:auto; text-align:right; min-width:0}
+.who b{display:flex; justify-content:flex-end; align-items:center; gap:8px; font-size:17px; font-weight:600}
+.who span{display:block; font-size:14px; opacity:.92; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.dot{width:9px; height:9px; border-radius:50%; flex:none; background:#cfd8d5}
+.dot.ok{background:#8cf5b8}
+.dot.warn{background:#ffd166}
+.dot.crit{background:#ff9a9a}
+.pill{font-style:normal; font-size:11px; font-weight:700; letter-spacing:.06em; padding:2px 8px; border-radius:999px; background:rgba(255,255,255,.22); color:var(--on-brand)}
+
+/* ---------- layout ---------- */
+main{
+  padding:12px max(16px,env(safe-area-inset-right,0px)) calc(84px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px));
+  display:flex; flex-direction:column; gap:12px;
+}
+.view{display:flex; flex-direction:column; gap:12px}
+.card{background:var(--card); border-radius:12px; padding:14px; box-shadow:var(--shadow); min-width:0}
+body.dim .card:not(.keep){opacity:.6}
+.h{margin:0 0 10px; font-size:18px; font-weight:600; display:flex; align-items:center; gap:8px}
+.h::before{content:""; width:4px; height:16px; background:var(--brand); transform:skewX(-20deg); border-radius:1px; flex:none}
+.note{margin:8px 0 0; color:var(--muted); font-size:12.5px}
+
+.banner{display:flex; gap:12px; align-items:center; justify-content:space-between; flex-wrap:wrap}
+.banner p{margin:0; flex:1 1 220px}
+.btn{
+  appearance:none; border:0; border-radius:8px; padding:10px 16px; font:inherit; font-weight:600; cursor:pointer;
+  background:var(--brand); color:var(--on-brand); text-decoration:none; display:inline-block; text-align:center;
+}
+.btn.alt{background:var(--chip); color:var(--fg)}
+.evshare{margin-top:6px; font:inherit; font-size:12px; font-weight:600; border:0; border-radius:8px; padding:6px 10px; background:var(--chip); color:var(--fg); cursor:pointer}
+.fld textarea{width:100%; font:inherit; padding:10px; border:1px solid var(--line,#ddd); border-radius:8px; background:var(--bg); color:var(--fg); min-height:60px}
+
+/* ---------- stats + chips ---------- */
+.stats{display:flex; flex-wrap:wrap; justify-content:space-between; gap:10px 14px}
+.stat{display:flex; align-items:center; gap:8px; min-width:0}
+.ico{
+  width:28px; height:28px; border:2px solid var(--muted); border-radius:50%; flex:none;
+  display:grid; place-items:center; color:var(--muted); font-weight:700; font-size:13px; line-height:1;
+}
+.ico svg{width:16px; height:16px}
+.stat b{display:block; font-size:17px; font-weight:600; font-variant-numeric:tabular-nums; white-space:nowrap}
+.stat small{display:block; color:var(--muted); font-size:13px; line-height:1.2}
+.stat b.pos{color:var(--on)} .stat b.neg{color:var(--off)}
+.chips{display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:12px}
+.chip{
+  display:flex; justify-content:space-between; align-items:center; gap:8px;
+  background:var(--chip); border-radius:8px; padding:10px 12px; min-width:0;
+}
+.chip span{color:var(--muted); line-height:1.2; font-size:13.5px}
+.chip b{font-weight:700; flex:none}
+.chip b.on{color:var(--on)} .chip b.off{color:var(--off)} .chip b.na{color:var(--faint)}
+
+/* ---------- SOC ---------- */
+.soc{display:grid; grid-template-columns:minmax(110px,148px) 1fr; gap:10px; align-items:center}
+.gauge{width:100%; height:auto; display:block}
+.gauge .trk{fill:none; stroke:var(--track); stroke-width:16; stroke-linecap:round}
+.gauge .prg{fill:none; stroke:url(#gg); stroke-width:16; stroke-linecap:round}
+.gauge text{font-family:inherit}
+.gauge .lbl{fill:var(--muted); font-size:13px}
+.gauge .pct{fill:var(--fg); font-size:23px; font-weight:700}
+.gauge .end{fill:var(--faint); font-size:10px}
+@media (prefers-reduced-motion:no-preference){ .gauge .prg{transition:stroke-dasharray .6s ease} }
+.kv{list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:7px; min-width:0}
+.kv li{display:flex; flex-wrap:wrap; column-gap:4px; font-size:14px}
+.kv b{font-weight:500; font-variant-numeric:tabular-nums}
+.kv a{color:var(--brand); text-decoration:none; font-weight:500}
+@media (prefers-color-scheme:dark){ :root:not([data-theme="light"]) .kv a{color:var(--on)} }
+:root[data-theme="dark"] .kv a{color:var(--on)}
+
+/* ---------- alarms ---------- */
+.alarms{list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:9px}
+.alarms li{display:flex; gap:10px; align-items:baseline; font-size:15px}
+.alarms .d{width:8px; height:8px; border-radius:50%; flex:none; background:var(--on); position:relative; top:-1px}
+.alarms .d.warn{background:var(--warn)} .alarms .d.crit{background:var(--crit)} .alarms .d.info{background:var(--off)}
+
+/* ---------- temperatures ---------- */
+.temps{display:flex; flex-direction:column; gap:8px}
+.trow{
+  display:grid; grid-template-columns:1fr auto 1fr; align-items:center; gap:8px;
+  background:var(--chip); border-radius:10px; padding:12px 14px; font-size:17px; font-variant-numeric:tabular-nums;
+}
+.trow span:last-child{text-align:right}
+.trow svg{width:14px; height:26px; color:var(--faint)}
+
+/* ---------- cells ---------- */
+.ck{margin:-4px 0 0; color:var(--muted); font-size:12.5px}
+.ck .mx{color:var(--crit); font-weight:700} .ck .mn{color:var(--on); font-weight:700}
+.cells{display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); gap:10px 6px; margin-top:12px}
+.cell{display:flex; flex-direction:column; align-items:center; gap:4px; min-width:0}
+.bat{
+  position:relative; width:calc(100% - 7px); max-width:50px; height:28px; margin-right:7px;
+  border:1.5px solid var(--cell-line); border-radius:6px; display:grid; place-items:center;
+  font-size:15px; font-weight:500; font-variant-numeric:tabular-nums;
+}
+.bat::after{content:""; position:absolute; right:-6px; top:6px; width:4px; height:12px; border-radius:0 3px 3px 0; background:var(--cell-line)}
+.bat i{position:absolute; inset:2px; border-radius:3px; background:linear-gradient(90deg,var(--cell-fill) calc(var(--lv,0) * 1%),transparent 0)}
+.bat span{position:relative}
+.cv{font-size:11.5px; font-variant-numeric:tabular-nums; white-space:nowrap; letter-spacing:-.1px}
+.cv[data-k="min"]{color:var(--on); font-weight:600} .cv[data-k="min"]::before{content:"\2193"}
+.cv[data-k="max"]{color:var(--crit); font-weight:600} .cv[data-k="max"]::before{content:"\2191"}
+@media (max-width:340px){ .cells{grid-template-columns:repeat(4,minmax(0,1fr))} }
+
+/* ---------- version / bridge rows ---------- */
+.rows{list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:9px}
+.rows li{display:flex; justify-content:space-between; gap:12px; font-size:15px}
+.rows li span:first-child{display:flex; gap:8px; align-items:baseline}
+.rows li span:first-child::before{content:""; width:6px; height:6px; border-radius:50%; background:var(--on); flex:none; position:relative; top:-1px}
+.rows li span:last-child{color:var(--muted); text-align:right; overflow-wrap:anywhere; font-variant-numeric:tabular-nums}
+
+/* ---------- trend ---------- */
+.ch-h{display:flex; justify-content:space-between; align-items:baseline; gap:8px; margin-bottom:6px}
+.ch-h span{font-size:15px; font-weight:600}
+.ch-h b{font-size:15px; font-variant-numeric:tabular-nums}
+.chart{position:relative}
+svg.cs{display:block; width:100%; height:auto; overflow:visible; user-select:none; -webkit-user-select:none}
+.cs .gl{stroke:var(--grid); stroke-width:1}
+.cs .zl{stroke:var(--axis); stroke-width:1}
+.cs .tk{fill:var(--faint); font-size:10.5px; font-variant-numeric:tabular-nums; font-family:inherit}
+.cs .ln{fill:none; stroke:var(--series); stroke-width:2; stroke-linejoin:round; stroke-linecap:round}
+.cs .ep{fill:var(--series); stroke:var(--card); stroke-width:2}
+.cs .hv{fill:var(--series); stroke:var(--card); stroke-width:2}
+.cs .xh{stroke:var(--muted); stroke-width:1; stroke-dasharray:3 3}
+.cs .hit{touch-action:pan-y; outline:none}
+.cs .hit:focus-visible{stroke:var(--brand); stroke-width:1}
+.tip{
+  position:absolute; top:0; transform:translateX(-50%); pointer-events:none;
+  background:var(--card); border:1px solid var(--line); border-radius:8px; padding:6px 9px;
+  box-shadow:0 4px 14px rgba(0,0,0,.18); font-size:12px; white-space:nowrap; z-index:2;
+}
+.tip b{display:block; font-size:15px; font-variant-numeric:tabular-nums}
+.tip .k{display:inline-block; width:12px; height:2px; background:var(--series); vertical-align:middle; margin-right:6px}
+.tip span{color:var(--muted)}
+.empty{margin:18px 0; color:var(--muted); text-align:center}
+.tbl{overflow-x:auto}
+table{border-collapse:collapse; width:100%; font-size:13px; font-variant-numeric:tabular-nums}
+th,td{padding:6px 8px; text-align:right; border-bottom:1px solid var(--line); white-space:nowrap}
+th:first-child,td:first-child{text-align:left}
+th{color:var(--muted); font-weight:500}
+
+/* ---------- setup ---------- */
+form{display:flex; flex-direction:column; gap:12px}
+label{display:flex; flex-direction:column; gap:4px; font-size:13px; color:var(--muted)}
+input{
+  font:inherit; font-size:16px; color:var(--fg); background:var(--chip); border:1px solid var(--line);
+  border-radius:8px; padding:10px 12px; min-width:0; width:100%;
+}
+.two{display:grid; grid-template-columns:1fr 110px; gap:10px}
+.actions{display:flex; gap:10px; flex-wrap:wrap}
+.state{margin:0; padding:10px 12px; border-radius:8px; background:var(--chip); font-size:14px}
+.state.err{color:var(--crit)}
+
+/* ---------- tab bar ---------- */
+.tabs{
+  position:fixed; left:0; right:0; bottom:0; z-index:30; background:var(--card); border-top:1px solid var(--line);
+  display:grid; grid-template-columns:repeat(5,1fr); max-width:600px; margin:0 auto;
+  padding-bottom:env(safe-area-inset-bottom,0px);
+}
+.tabs a{position:relative;
+  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px;
+  height:58px; text-decoration:none; color:var(--muted); font-size:13px;
+}
+.tabs a svg{width:24px; height:24px; fill:none; stroke:currentColor; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round}
+.tabs a i{position:absolute; top:6px; left:calc(50% + 8px); min-width:16px; height:16px; padding:0 4px; border-radius:8px; background:#c0392b; color:#fff; font:700 11px/16px system-ui,sans-serif; font-style:normal; text-align:center}
+.tabs a.on{background:var(--brand); color:var(--on-brand)}
+/* ---------- issues log ---------- */
+.ev{list-style:none; margin:0; padding:0; display:flex; flex-direction:column}
+.ev li{padding:10px 0; border-top:1px solid var(--line); font-size:14px}
+.ev li:first-child{border-top:0}
+.ev .r1{display:flex; gap:8px; align-items:baseline; flex-wrap:wrap}
+.ev time{color:var(--muted); font-size:12.5px; font-variant-numeric:tabular-nums}
+.ev .tag{font-size:11px; font-weight:700; letter-spacing:.05em; padding:1px 7px; border-radius:999px; background:var(--chip); color:var(--fg)}
+.ev .tag.crit{background:#c0392b; color:#fff}
+.ev .tag.warn{background:#e0a100; color:#1a1400}
+.ev .tag.ok{background:var(--brand); color:var(--on-brand)}
+.ev .snap{color:var(--muted); font-size:12.5px; margin-top:2px; font-variant-numeric:tabular-nums}
+.sum{display:flex; gap:16px; flex-wrap:wrap; margin:0 0 10px; font-size:14px}
+.sum b{font-size:20px; display:block}
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="top">
+    <svg class="logo" viewBox="0 0 44 44" aria-hidden="true">
+      <circle cx="22" cy="22" r="20.5" fill="#27b567" stroke="#ffffff" stroke-opacity=".75" stroke-width="2"/>
+      <g fill="#ffffff"><circle cx="14" cy="11" r="1.5"/><circle cx="22" cy="9" r="1.5"/><circle cx="30" cy="11" r="1.5"/></g>
+      <text x="22" y="27" text-anchor="middle" font-size="12" font-weight="700" fill="#ffffff" font-family="system-ui,sans-serif">BMS</text>
+    </svg>
+    <div class="who">
+      <b><i class="dot" id="hDot"></i><span id="hStatus">Demo data</span><em class="pill" id="hPill">DEMO</em></b>
+      <span id="hName">My Daly BMS</span>
+    </div>
+  </header>
+
+  <main id="main">
+    <!-- ======================= HOME ======================= -->
+    <section class="view" id="v-home">
+      <div class="card keep banner" id="banner">
+        <p><b>Reference snapshot (DEMO).</b> This is your supplied 16S DALY BLE reading captured while the DALY app showed balancing OFF. It is not live. Open Setup and connect MQTT to see live ESP32 data.</p>
+        <a class="btn" href="#setup">Set up</a>
+      </div>
+
+      <div class="card">
+        <div class="stats">
+          <div class="stat"><span class="ico">V</span><div><b id="sV">—</b><small>Voltage</small></div></div>
+          <div class="stat"><span class="ico">A</span><div><b id="sA">—</b><small>Current</small></div></div>
+          <div class="stat">
+            <span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="7" width="16" height="10" rx="2"/><path d="M21 10v4"/><path d="M7 10v4M11 10v4"/></svg></span>
+            <div><b id="sC">—</b><small>Remaining<br>Capacity</small></div>
+          </div>
+        </div>
+        <div class="chips">
+          <div class="chip"><span>Charge MOS</span><b id="cChg" class="na">—</b></div>
+          <div class="chip"><span>Discharge MOS</span><b id="cDsg" class="na">—</b></div>
+          <div class="chip"><span>Balance Status</span><b id="cBal" class="na">—</b></div>
+          <div class="chip"><span>Heating Status:</span><b id="cHeat" class="na" title="The bridge does not read the heater state">N/A</b></div>
+        </div>
+      </div>
+
+      <div class="card soc">
+        <svg class="gauge" viewBox="0 0 160 160" role="img" aria-label="State of charge">
+          <defs>
+            <linearGradient id="gg" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0" style="stop-color:var(--g1)"/><stop offset="1" style="stop-color:var(--g2)"/>
+            </linearGradient>
+          </defs>
+          <circle class="trk" cx="80" cy="80" r="62" transform="rotate(135 80 80)" stroke-dasharray="292.17 389.56"/>
+          <circle class="prg" id="gArc" cx="80" cy="80" r="62" transform="rotate(135 80 80)" stroke-dasharray="0 389.56"/>
+          <text class="lbl" x="80" y="72" text-anchor="middle">SOC</text>
+          <text class="pct" id="gPct" x="80" y="97" text-anchor="middle">—</text>
+          <text class="end" x="34" y="146" text-anchor="middle">0</text>
+          <text class="end" x="126" y="146" text-anchor="middle">100</text>
+        </svg>
+        <ul class="kv">
+          <li>Battery Type:<b id="kType">LFP</b></li>
+          <li>Volt Diff:<b id="kDiff">—</b></li>
+          <li>Power:<b id="kPow">—</b></li>
+          <li>Cycle Count:<b id="kCyc">—</b></li>
+          <li>Total Charge Ah:<b id="kTc" title="Not part of the BMS read commands the bridge uses">—</b></li>
+          <li>Total Discharge Ah:<b id="kTd" title="Not part of the BMS read commands the bridge uses">—</b></li>
+          <li><a href="#trend">History Log</a></li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <h2 class="h">Alarm Info</h2>
+        <ul class="alarms" id="alarms"></ul>
+      </div>
+
+      <div class="card">
+        <h2 class="h">Temperature Info</h2>
+        <div class="temps">
+          <div class="trow"><span id="t1">T1: —</span><svg viewBox="0 0 14 26" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M5 3a2 2 0 0 1 4 0v12.2a4 4 0 1 1-4 0z"/><path d="M7 9v9"/></svg><span id="t2">T2: —</span></div>
+          <div class="trow"><span id="t3">T3: —</span><svg viewBox="0 0 14 26" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M5 3a2 2 0 0 1 4 0v12.2a4 4 0 1 1-4 0z"/><path d="M7 9v9"/></svg><span id="t4">T4: —</span></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2 class="h">Cell Strings</h2>
+        <p class="ck">16 strings / Max Voltage: <span class="mx">&uarr;</span> / Min Voltage: <span class="mn">&darr;</span></p>
+        <div class="cells" id="cells"></div>
+      </div>
+
+      <div class="card">
+        <h2 class="h">All BMS values</h2>
+        <p class="note" style="margin-top:0" id="allNote">Everything the BMS reports, as read.</p>
+        <div class="tbl"><table>
+          <thead><tr><th>Value</th><th>Reading</th><th>Reg</th></tr></thead>
+          <tbody id="allBody"></tbody>
+        </table></div>
+      </div>
+
+      <div class="card">
+        <h2 class="h">Version Info</h2>
+        <ul class="rows" id="ver"></ul>
+        <p class="note">Static values copied from the Daly app. Edit them in the STATIC block at the top of the script.</p>
+      </div>
+
+      <div class="card keep">
+        <h2 class="h">ESP32 Bridge</h2>
+        <ul class="rows">
+          <li><span>Bluetooth link to BMS</span><span id="bBle">—</span></li>
+          <li><span>WiFi signal</span><span id="bRssi">—</span></li>
+          <li><span>Bridge uptime</span><span id="bUp">—</span></li>
+          <li><span>Last update</span><span id="bAge">—</span></li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- ======================= TREND ======================= -->
+    <section class="view" id="v-trend" hidden>
+      <div class="card keep">
+        <h2 class="h">History Log</h2>
+        <p class="note" style="margin-top:0">Kept while this page is open and receiving live data (last hour). Hover or drag on a chart to read a value.</p>
+      </div>
+      <div class="card"><div class="ch-h"><span>Pack current (A)</span><b id="vA">—</b></div><div class="chart" id="chA"></div><p class="note">Above 0 is charging, below 0 is discharging.</p></div>
+      <div class="card"><div class="ch-h"><span>Pack voltage (V)</span><b id="vV">—</b></div><div class="chart" id="chV"></div></div>
+      <div class="card"><div class="ch-h"><span>Cell spread (mV)</span><b id="vS">—</b></div><div class="chart" id="chS"></div><p class="note">Highest cell minus lowest cell.</p></div>
+      <div class="card"><div class="ch-h"><span>State of charge (%)</span><b id="vC">—</b></div><div class="chart" id="chC"></div></div>
+      <div class="card">
+        <h2 class="h">Latest readings</h2>
+        <div class="tbl"><table>
+          <thead><tr><th>Time</th><th>V</th><th>A</th><th>SOC %</th><th>Spread mV</th></tr></thead>
+          <tbody id="tbody"></tbody>
+        </table></div>
+      </div>
+    </section>
+
+    <!-- ======================= HISTORY (Supabase) ======================= -->
+    <section class="view" id="v-hist" hidden>
+      <div class="card keep">
+        <h2 class="h">Saved history</h2>
+        <p class="note" style="margin-top:0">The cloud saves one reading a minute, even when this app is closed.</p>
+        <label class="fld">Period
+          <select id="hRange"><option value="1">Last 24 hours</option><option value="7" selected>Last 7 days</option><option value="30">Last 30 days</option></select></label>
+        <div class="actions"><button class="btn" type="button" id="hLoad">Load history</button></div>
+        <p class="note" id="hMsg" role="status">Enter the Supabase key in Setup first (one time).</p>
+      </div>
+      <div class="card keep">
+        <h2 class="h">Clear saved history</h2>
+        <p class="note" style="margin-top:0">Deletes readings saved in the cloud, for example the test and simulator data, or everything before the repaired battery goes back in. It cannot be undone.</p>
+        <label class="fld">What to delete
+          <select id="hcRange"><option value="all">Everything</option><option value="1">Older than 1 day</option><option value="7">Older than 7 days</option><option value="30">Older than 30 days</option></select></label>
+        <label class="fld"><span><input type="checkbox" id="hcKeep" checked style="width:auto;margin-right:8px">Keep the fault log (events)</span></label>
+        <label class="fld">Clear passphrase<input id="hcPass" type="password" autocomplete="off" placeholder="the passphrase set in the Supabase SQL"></label>
+        <div class="actions"><button class="btn alt" type="button" id="hClear">Delete from cloud</button></div>
+        <p class="note" id="hcMsg" role="status">One-time setup: run clear_history.sql in Supabase. Only someone who knows the passphrase can delete.</p>
+      </div>
+      <div id="hStats" class="sum"></div>
+      <div class="card"><div class="ch-h"><span>Pack voltage (V)</span><b id="hvV">—</b></div><div class="chart" id="hV"></div></div>
+      <div class="card"><div class="ch-h"><span>Pack current (A)</span><b id="hvA">—</b></div><div class="chart" id="hA"></div></div>
+      <div class="card"><div class="ch-h"><span>State of charge (%)</span><b id="hvC">—</b></div><div class="chart" id="hC"></div></div>
+      <div class="card"><div class="ch-h"><span>Cell spread (mV)</span><b id="hvS">—</b></div><div class="chart" id="hS"></div></div>
+      <div class="card"><div class="ch-h"><span>Highest temperature (°C)</span><b id="hvT">—</b></div><div class="chart" id="hT"></div></div>
+      <div class="card keep">
+        <h2 class="h">Saved fault log</h2>
+        <div class="actions">
+          <button class="btn" type="button" id="hEvLoad">Load saved faults</button>
+          <button class="btn alt" type="button" id="hEvShare">Share these</button>
+        </div>
+        <p class="note" id="hEvMsg">Faults the cloud recorded around the clock: imbalance, SOC jumps, Bluetooth loss and BMS alarms.</p>
+        <ul class="ev" id="hEvList"></ul>
+      </div>
+    </section>
+
+    <!-- ======================= ISSUES ======================= -->
+    <section class="view" id="v-issues" hidden>
+      <div class="card keep">
+        <h2 class="h">Issue log</h2>
+        <div class="sum">
+          <div><b id="iOpen">0</b>open now</div>
+          <div><b id="iCnt">0</b>events logged</div>
+          <div><b id="iSince">—</b>first event</div>
+        </div>
+        <div class="actions">
+          <button class="btn" type="button" id="iShare">Share fault report</button>
+          <button class="btn alt" type="button" id="iWa">WhatsApp</button>
+          <button class="btn alt" type="button" id="iMail">Email</button>
+          <button class="btn alt" type="button" id="iCsv">Download CSV</button>
+          <button class="btn alt" type="button" id="iCopy">Copy report</button>
+          <button class="btn alt" type="button" id="iClear">Clear log</button>
+        </div>
+        <p class="note" id="iMsg" role="status">Faults are logged automatically while this page is open and connected, with the pack readings at that moment. The log is saved in this browser only.</p>
+      </div>
+      <div class="card"><ul class="ev" id="evList"></ul></div>
+    </section>
+
+    <!-- ======================= SETUP ======================= -->
+    <section class="view" id="v-setup" hidden>
+      <div class="card keep">
+        <h2 class="h">Battery details (used in reports)</h2>
+        <form id="dForm" class="fld" autocomplete="off">
+          <label>Battery serial number<input id="dSerial" autocapitalize="off" spellcheck="false" placeholder="from the battery label or Daly app"></label>
+          <div class="two">
+            <label>Battery code<input id="dCode" autocapitalize="off" spellcheck="false"></label>
+            <label>BMS software version<input id="dSw" autocapitalize="off" spellcheck="false"></label>
+          </div>
+          <label>Hykon contact (WhatsApp number with country code, or email)<input id="dContact" autocapitalize="off" spellcheck="false" placeholder="+91XXXXXXXXXX or name@example.com"></label>
+          <label>Notes for the manufacturer<textarea id="dNotes" placeholder="e.g. purchase date, inverter model, when the problem started"></textarea></label>
+          <div class="actions"><button class="btn" type="submit">Save details</button></div>
+          <p class="note" id="dMsg">Saved only in this browser.</p>
+        </form>
+      </div>
+      <div class="card keep">
+        <h2 class="h">History (Supabase, read only)</h2>
+        <form id="sForm" class="fld" autocomplete="off">
+          <label>Project URL<input id="sUrl" autocapitalize="off" spellcheck="false" placeholder="https://xxxx.supabase.co"></label>
+          <label>Publishable key (starts sb_publishable_)<input id="sKey" type="password" autocomplete="off" placeholder="never the secret key"></label>
+          <div class="actions"><button class="btn" type="submit">Save</button></div>
+          <p class="note" id="sMsg">Saved only in this browser. Only the publishable key goes here.</p>
+        </form>
+      </div>
+      <div class="card keep" id="installCard" hidden>
+        <h2 class="h">Install on this phone</h2>
+        <div class="actions"><button class="btn" type="button" id="bInstall">Install app</button></div>
+        <p class="note">Adds a Battery Monitor icon to your home screen that opens full screen like an app.</p>
+      </div>
+      <div class="card keep">
+        <h2 class="h">Protection settings review</h2>
+        <p class="note" id="revSum"></p>
+        <div id="revBody"></div>
+        <div class="actions"><button class="btn" type="button" id="revShare">Share review with Hykon</button><button class="btn alt" type="button" id="revCopy">Copy</button></div>
+        <p class="note" id="revMsg">Values are as shown in the Daly app on 15 Nov 2026 (read-only, nothing here changes the BMS). Recommended values come from Daly's published LiFePO4 specification (cell over-voltage 3.65 V ±0.05 V, "do not set higher than the cell specification", charge below 45 C) and typical LiFePO4 cell datasheets. The cell maker's datasheet is the final authority, so ask Hykon for it and compare.</p>
+      </div>
+      <div class="card keep">
+        <h2 class="h">Other live values (not yet confirmed)</h2>
+        <p class="note" id="liveSum">Waiting for the ESP32 to read the BMS settings map…</p>
+        <div id="liveBody"></div>
+        <p class="note">Read only. Raw values from the BMS map, shown so they can be compared with the Daly app.</p>
+      </div>
+      <div class="card keep">
+        <h2 class="h">BMS settings (read from the BMS)</h2>
+        <div id="setBody"><p class="note">Waiting for the ESP32 to read the BMS settings (about 10 s after it connects)…</p></div>
+        <div class="actions"><button class="btn alt" type="button" id="setCopy">Copy settings</button></div>
+        <p class="note" id="setMsg">Read-only. These are the raw settings frames the BMS sends back. Copy them and send them over so each value can be named and decoded to match the Daly app.</p>
+      </div>
+      <div class="card keep">
+        <h2 class="h">Broker connection</h2>
+        <form id="form" autocomplete="on">
+          <label>Host name<input id="fHost" inputmode="url" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="your-deployment.emqxsl.com"></label>
+          <div class="two">
+            <label>Username<input id="fUser" autocomplete="username" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="daly_dashboard"></label>
+            <label>WebSocket port<input id="fPort" inputmode="numeric" placeholder="8084"></label>
+          </div>
+          <label>Password<input id="fPass" type="password" autocomplete="current-password"></label>
+          <div class="two">
+            <label>Topic base<input id="fDev" autocapitalize="off" spellcheck="false" placeholder="daly/battery"></label>
+            <label>Name shown<input id="fName" placeholder="My Daly BMS"></label>
+          </div>
+          <div class="actions">
+            <button class="btn" type="submit">Save &amp; connect</button>
+            <button class="btn alt" type="button" id="bDemo">Use demo data</button>
+          </div>
+          <p class="state" id="connState" role="status">Not connected. Showing demo data.</p>
+        </form>
+        <p class="note">Saved only in this browser. Use the subscribe-only <b>daly_dashboard</b> login. The topic base must match TOPIC_BASE in the ESP32 firmware.</p>
+      </div>
+    </section>
+  </main>
+
+  <nav class="tabs" aria-label="Sections">
+    <a id="t-home" href="#home"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11.5 12 4l9 7.5"/><path d="M5.5 10v10h4.5v-6h4v6h4.5V10"/></svg>Home</a>
+    <a id="t-trend" href="#trend"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 18 9 11l4 3.5L21 6"/><path d="M3 21h18"/></svg>Trend</a>
+    <a id="t-hist" href="#hist"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 7v5l3.2 2"/></svg>History</a>
+    <a id="t-issues" href="#issues"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 2.5 20h19L12 3z"/><path d="M12 10v5"/><path d="M12 17.5v.5"/></svg>Issues<i id="iBadge" hidden></i></a>
+    <a id="t-setup" href="#setup"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></svg>Setup</a>
+  </nav>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/mqtt@5.3.4/dist/mqtt.min.js"></script>
+<script>
+(() => {
+'use strict';
+
+/* ================= STATIC values and tunables ================= */
+const STATIC = {
+  battType: 'LFP',
+  versions: [
+    ['Bluetooth Version', '2.3.35'],
+    ['BMS SW Version', '41_241101_00HT'],
+    ['Slave BMS SW Version', '30_240525_10HB'],
+    ['BMS HW Version', '—'],
+    ['Battery Code', '20250918'],
+    ['SN', '210KG021000036']
+  ]
+};
+const STALE_MS  = 20000;   // no live message for this long -> data dimmed and flagged
+const DIFF_WARN = 50;      // mV, dashboard advisory (not a BMS alarm)
+const DIFF_CRIT = 150;
+const HIST_MAX  = 360;     // 30 minutes at one sample every 5 s
+const NUM_CELLS = 16;
+
+// Values shown before you connect (taken from the Daly app screenshot).
+const DEMO = {
+  // User-provided DALY 16S BLE snapshot, captured while the DALY app reported balancing OFF.
+  // This is demonstration data only; the header remains DEMO until MQTT live data arrives.
+  v:57.5, a:0, soc:100, remAh:100, cycles:425, state:0, chg:null, dsg:1,
+  maxMv:3602, minMv:3572, maxNo:6, minNo:8, diffMv:30, tMax:31, tMin:30,
+  cells:[3602,3602,3599,3580,3602,3602,3595,3572,3602,3601,3599,3601,3601,3597,3601,3601],
+  temps:[30,31,30,31], bal:null, balRaw:425, balMask:4608,
+  alarm:'00000000000000', ble:1, rssi:null, up:null,
+  registers:{
+    '0x0000':3602,'0x0001':3602,'0x0002':3599,'0x0003':3580,'0x0004':3602,'0x0005':3602,'0x0006':3595,'0x0007':3572,
+    '0x0008':3602,'0x0009':3601,'0x000A':3599,'0x000B':3601,'0x000C':3601,'0x000D':3597,'0x000E':3601,'0x000F':3601,
+    '0x0030':70,'0x0031':71,'0x0032':70,'0x0033':71,'0x0038':575,'0x0039':30000,'0x003A':1000,'0x003B':40,
+    '0x003C':16,'0x003D':4,'0x003E':3602,'0x003F':6,'0x0040':3572,'0x0041':8,'0x0042':30,'0x0043':71,
+    '0x0044':4,'0x0045':70,'0x0046':1,'0x0047':1,'0x0049':1,'0x004B':1000,'0x004C':425,'0x004D':425,
+    '0x004F':4608,'0x0053':1,'0x0059':65535,'0x005A':80,'0x005B':75,'0x005E':65535,'0x0063':65535,
+    '0x0064':65535,'0x0065':65535,'0x0066':65535,'0x0067':65535,'0x0068':65535,'0x0069':65535,
+    '0x006A':65535,'0x006B':65535,'0x006C':65535,'0x006D':65535,'0x006E':65535,'0x006F':65535,
+    '0x0070':65535,'0x0071':65535,'0x0072':65535,'0x0073':65535,'0x0074':65535,'0x0075':65535,
+    '0x0076':65535,'0x0077':65535,'0x0078':65535,'0x0079':65535,'0x007A':65535,'0x007B':65535,
+    '0x007C':65535,'0x007D':65535,'0x007E':65535,'0x0080':1000,'0x0081':3200,'0x0082':1,'0x0083':16,
+    '0x0086':4,'0x008A':65530,'0x008B':3650,'0x008C':3700,'0x008D':2800,'0x008E':2600,'0x008F':576,
+    '0x0090':580,'0x0091':464,'0x0092':432,'0x0093':29300,'0x0094':29200,'0x0095':31200,'0x0096':31250,
+    '0x0097':95,'0x0098':100,'0x0099':45,'0x009A':40,'0x009B':100,'0x009C':105,'0x009D':25,'0x009E':15,
+    '0x009F':300,'0x00A0':500,'0x00A1':10,'0x00A2':15,'0x00A3':3300,'0x00A4':20,'0x00A5':1,'0x00A6':1,
+    '0x00A7':998,'0x00A8':130,'0x00A9':21555,'0x00AA':12336,'0x00AB':24369,'0x00AC':12593,'0x00AD':12595,
+    '0x00AE':12895,'0x00AF':12596,'0x00B1':17721,'0x00B2':12339,'0x00B3':11589,'0x00B4':22067,'0x00B5':12337,
+    '0x00B6':11603,'0x00B7':19778,'0x00B9':12848,'0x00BA':12852,'0x00BB':12341,'0x00BC':12599,
+    '0x00C9':12594,'0x00CA':13108,'0x00CB':13622,'0x00CC':5894,'0x00CD':256,'0x00CF':65535,'0x00D2':4,
+    '0x00D4':6667,'0x00D5':3855,'0x00D6':6954,'0x00D8':65535,'0x00D9':65535,'0x00DA':65535,'0x00DB':65535,
+    '0x00DC':65535,'0x00DD':65535,'0x00DE':65535,'0x00DF':65535,'0x0100':1,'0x0101':16,'0x0102':1,
+    '0x0103':16,'0x0106':4,'0x0109':1,'0x010A':34464,'0x010B':1,'0x010C':34464,'0x010D':649,'0x010E':5500,
+    '0x010F':676,'0x0110':36700,'0x0111':40,'0x0112':45,'0x0114':3200,'0x0115':6553,'0x0116':1000,
+    '0x0117':963,'0x0118':10,'0x011A':3300,'0x011B':20,'0x011C':10,'0x011D':100,'0x011E':100,'0x011F':10,
+    '0x0120':165,'0x0121':1,'0x0122':1,'0x0123':6667,'0x0124':3860,'0x0125':10552,'0x0129':6149,
+    '0x012A':4352,'0x012C':4,'0x012D':2,'0x012E':65535,'0x0130':3650,'0x0131':3700,'0x0132':3500,
+    '0x0133':1000,'0x0134':2800,'0x0135':2600,'0x0136':3000,'0x0137':1000,'0x0138':576,'0x0139':580,
+    '0x013A':560,'0x013B':1000,'0x013C':464,'0x013D':432,'0x013E':450,'0x013F':1000,
+    '0x0140':29300,'0x0141':29200,'0x0142':1000,'0x0143':29200,'0x0144':1000,'0x0145':31200,
+    '0x0146':31250,'0x0147':1000,'0x0148':31250,'0x0149':1000,'0x014A':95,'0x014B':100,'0x014C':97,
+    '0x014D':1000,'0x014E':45,'0x014F':40,'0x0150':43,'0x0151':1000,'0x0152':100,'0x0153':105,
+    '0x0154':102,'0x0155':1000,'0x0156':25,'0x0157':15,'0x0158':18,'0x0159':1000,'0x015A':300,
+    '0x015B':500,'0x015C':450,'0x015D':1000,'0x015E':10,'0x015F':15,'0x0160':12,'0x0161':1000,
+    '0x0162':100,'0x0163':50,'0x0164':100,'0x0165':1000,'0x0166':130,'0x0167':140,'0x0168':105,
+    '0x0169':1000,'0x016A':105,'0x016B':110,'0x016C':105,'0x016D':1000,'0x016E':1500,'0x016F':300,
+    '0x0173':65535,'0x0174':65535,'0x0175':65535,'0x0176':1,'0x0177':1,'0x0178':13361,'0x0179':24370,
+    '0x017A':13105,'0x017B':12593,'0x017C':12639,'0x017D':12336,'0x017E':13140,'0x0186':16973,
+    '0x0187':21293,'0x0188':12592,'0x0189':13142,'0x018A':17709,'0x018B':13104,'0x018C':14661,
+    '0x018D':12849,'0x018E':12362,'0x018F':17457,'0x0190':12592,'0x0191':14640,'0x0192':12593,
+    '0x0193':13368,'0x0199':8224,'0x019A':8224,'0x019B':12848,'0x019C':12852,'0x019D':12341,
+    '0x019E':12599,'0x01BB':65535,'0x01BC':65535,'0x01BD':65535,'0x01BE':65535,'0x01BF':65535,
+    '0x01C0':65535,'0x01C1':65535,'0x01C2':65535,'0x01C3':65535,'0x01C4':65535,'0x01C5':65535,
+    '0x01C6':65535,'0x01C7':65535,'0x01C8':65535,'0x01C9':65535,'0x01CA':65535,'0x01CB':65535,
+    '0x01CC':65535,'0x01CD':65535,'0x01CE':65535,'0x01CF':65535,'0x01D0':65535,'0x01D1':65535,
+    '0x01D2':65535,'0x01D3':65535,'0x01D4':65535,'0x01D5':65535,'0x01D6':65535,'0x01D7':65535,
+    '0x01D8':65535,'0x01D9':65535,'0x01DA':65535,'0x01DB':65535,'0x01DC':65535,'0x01DD':65535,
+    '0x01DE':65535,'0x01DF':65535,'0x01E0':1569,'0x01E1':32768,'0x01E2':28,'0x01E3':6667,
+    '0x01E4':1806,'0x01E5':10760,'0x01E6':3073,'0x01E7':582,'0x01E8':30339,'0x01E9':1000,
+    '0x01EA':526,'0x01EB':24323,'0x01EC':3581,'0x01ED':2123,'0x01EE':1097,'0x01EF':273,'0x01F0':3651
+  }
+};
+
+/* ================= helpers ================= */
+const $ = id => document.getElementById(id);
+const setText = (id, t) => { const e = $(id); if (e) e.textContent = t; };
+const store = {
+  get(k){ try { return localStorage.getItem(k); } catch(e){ return null; } },
+  set(k,v){ try { localStorage.setItem(k,v); } catch(e){} }
+};
+let details = { serial:'', code:'', sw:'', contact:'', notes:'' };
+try { Object.assign(details, JSON.parse(store.get('dalyDetails') || '{}')); } catch(e){}
+const f1 = x => Number.isFinite(x) ? x.toFixed(1) : '—';
+const clamp = (x,a,b) => Math.min(Math.max(x,a),b);
+const pad2 = n => String(n).padStart(2,'0');
+const clock = t => { const d = new Date(t); return pad2(d.getHours())+':'+pad2(d.getMinutes())+':'+pad2(d.getSeconds()); };
+function fmtUp(s){
+  if (!Number.isFinite(s)) return '—';
+  const d = Math.floor(s/86400), h = Math.floor(s%86400/3600), m = Math.floor(s%3600/60);
+  return d ? d+' d '+h+' h' : h ? h+' h '+m+' min' : m+' min';
+}
+function fmtAge(ms){
+  const s = Math.round(ms/1000);
+  return s < 2 ? 'just now' : s < 90 ? s+' s ago' : Math.round(s/60)+' min ago';
+}
+function fmtSpan(ms){
+  const s = Math.round(ms/1000);
+  return s < 90 ? s+' s' : s < 5400 ? Math.round(s/60)+' min' : (s/3600).toFixed(1)+' h';
+}
+
+/* ================= settings ================= */
+const DEFAULT_CFG = { host:'ee8fdccd.ala.asia-southeast1.emqxsl.com', port:'8084', user:'daly_dashboard', pass:'', base:'daly/battery', name:"Jayakrishnan's BMS" };
+let cfg = Object.assign({}, DEFAULT_CFG);
+try { Object.assign(cfg, JSON.parse(store.get('dalyCfg') || '{}')); } catch(e){}
+
+/* ================= state ================= */
+let mode = 'demo';                 // 'demo' | 'live'
+let conn = { state:'idle', msg:'' }; // idle | connecting | connected | offline | error
+let live = null, liveAt = 0, retained = false, bridgeOnline = null;
+let client = null;
+const hist = [];
+
+/* ================= alarm decoding (Daly 0x98 flags) =================
+   Bit layout follows the Daly UART protocol. Compare with the Daly app once live:
+   the app may word or level some alarms differently. */
+const ALARM_BITS = [
+  [['Cell volt high',1],['Cell volt high',2],['Cell volt low',1],['Cell volt low',2],['Pack volt high',1],['Pack volt high',2],['Pack volt low',1],['Pack volt low',2]],
+  [['Charge temp high',1],['Charge temp high',2],['Charge temp low',1],['Charge temp low',2],['Discharge temp high',1],['Discharge temp high',2],['Discharge temp low',1],['Discharge temp low',2]],
+  [['Charge overcurrent',1],['Charge overcurrent',2],['Discharge overcurrent',1],['Discharge overcurrent',2],['SOC high',1],['SOC high',2],['SOC low',1],['SOC low',2]],
+  [['Volt diff',1],['Volt diff',2],['Temp diff',1],['Temp diff',2]],
+  [['Charge MOS temp high',0],['Discharge MOS temp high',0],['Charge MOS temp sensor fault',0],['Discharge MOS temp sensor fault',0],['Charge MOS adhesion',0],['Discharge MOS adhesion',0],['Charge MOS open circuit',0],['Discharge MOS open circuit',0]],
+  [['AFE chip error',0],['Voltage collection dropped',0],['Cell temp sensor fault',0],['EEPROM error',0],['RTC error',0],['Precharge failure',0],['Vehicle comms failure',0],['Internal comms failure',0]],
+  [['Current module fault',0],['Total voltage detect fault',0],['Short-circuit protection',0],['Low volt, charging forbidden',0]]
+];
+// Named alarms from the BMS: the Daly 0x98 flags when the ESP32 sends them, otherwise the four fault registers
+// (58-61, same bit layout assumed, byte order not yet confirmed on this BMS).
+function bmsAlarms(d){
+  if (!d) return [];
+  if (typeof d.alarm === 'string') return decodeAlarm(d.alarm);
+  // Each 16-bit register (58-61) carries two flag bytes with the LOW byte first (confirmed 15 Nov 2026: 0x0021 at full charge = cell volt high L1 + pack volt high L2).
+  if (typeof d.fault === 'string') return decodeAlarm(d.fault.replace(/(..)(..)/g, '$2$1')).map(a => ({ text: a.text, sev: a.sev }));
+  return [];
+}
+function decodeAlarm(hex){
+  const out = [];
+  if (typeof hex !== 'string') return out;
+  for (let b = 0; b < ALARM_BITS.length; b++) {
+    const byte = parseInt(hex.substr(b*2, 2), 16);
+    if (!(byte > 0)) continue;
+    ALARM_BITS[b].forEach((it, bit) => {
+      if (byte & (1 << bit)) out.push({ text: it[0] + (it[1] ? ' (level '+it[1]+')' : ''), sev: it[1] === 1 ? 'warn' : 'crit' });
+    });
+  }
+  return out;
+}
+
+/* ================= DOM build ================= */
+const cellEls = [];
+(function buildStatic(){
+  const grid = $('cells');
+  for (let i = 0; i < NUM_CELLS; i++) {
+    const w = document.createElement('div'); w.className = 'cell';
+    const bat = document.createElement('div'); bat.className = 'bat';
+    const fill = document.createElement('i'); const num = document.createElement('span'); num.textContent = String(i+1);
+    bat.append(fill, num);
+    const cv = document.createElement('div'); cv.className = 'cv'; cv.textContent = '—';
+    w.append(bat, cv); grid.appendChild(w);
+    cellEls.push({ bat, cv });
+  }
+  const ver = $('ver');
+  renderVersions();
+  setText('kType', STATIC.battType);
+})();
+function renderVersions(){
+  const ver = $('ver'); if (!ver) return; ver.textContent = '';
+  [['SN', details.serial], ['Battery Code', details.code], ['BMS SW Version', details.sw]].forEach(([k,v]) => {
+    const li = document.createElement('li');
+    const a = document.createElement('span'); a.textContent = k;
+    const b = document.createElement('span'); b.textContent = v || 'not set (Setup tab)';
+    li.append(a, b); ver.appendChild(li);
+  });
+}
+
+/* ================= render: home ================= */
+const ARC = 292.17, CIRC = 389.56;
+
+function headerStatus(d, age){
+  // p = state badge: LIVE, STALE, OFFLINE, ERROR (or DEMO). Old values are never shown as LIVE.
+  if (mode === 'demo') return { t:'Demo data', c:'warn', p:'DEMO' };
+  if (conn.state === 'error') return { t:'Broker error', c:'crit', p:'ERROR' };
+  if (conn.state === 'connecting') return { t:'Connecting to broker…', c:'warn', p:'OFFLINE' };
+  if (conn.state !== 'connected') return { t:'Broker disconnected', c:'crit', p:'OFFLINE' };
+  if (bridgeOnline === false) return { t:'ESP32 offline', c:'crit', p:'OFFLINE' };
+  if (!d) return { t:'Waiting for ESP32…', c:'warn', p:'OFFLINE' };
+  if (retained) return { t:'Waiting for live data…', c:'warn', p:'STALE' };
+  if (age > STALE_MS) return { t:'No data for ' + fmtSpan(age), c:'crit', p:'STALE' };
+  if (d.ble === 0) return { t:'BMS Bluetooth not connected', c:'warn', p:'STALE' };
+  return { t:'Bluetooth Connected', c:'ok', p:'LIVE' };
+}
+
+function renderHeader(){
+  const d = mode === 'demo' ? DEMO : live;
+  const age = mode === 'live' && liveAt ? Date.now() - liveAt : 0;
+  const st = headerStatus(d, age);
+  setText('hStatus', st.t);
+  $('hDot').className = 'dot ' + st.c;
+  setText('hPill', st.p);
+  setText('hName', cfg.name || 'My Daly BMS');
+  const dim = mode === 'live' && (!d || retained || age > STALE_MS || d.ble === 0 || bridgeOnline === false);
+  document.body.classList.toggle('dim', !!dim);
+  $('banner').hidden = mode !== 'demo';
+  if (mode === 'live' && d) {
+    setText('bAge', retained ? 'waiting…' : fmtAge(age));
+  } else setText('bAge', '—');
+}
+
+/* ================= exact-address register decoder =================
+   The user's BLE register dump uses actual 16-bit addresses (0x0000...0x01F0).
+   Never confuse an array ordinal with a register address.
+   Known labels below are only assigned where the DALY reference or user's DALY app confirms them.
+*/
+const hex4 = v => '0x' + Number(v).toString(16).toUpperCase().padStart(4,'0');
+function asAddress(k) {
+  if (typeof k === 'number' && Number.isFinite(k)) return k;
+  const s = String(k).trim();
+  if (/^0x/i.test(s)) return parseInt(s,16);
+  if (/^[0-9a-f]{4}$/i.test(s)) return parseInt(s,16);
+  if (/^\d+$/.test(s)) return Number(s);
+  return NaN;
+}
+function extractRegisterMap(d) {
+  const out = {};
+  const put = (addr,val) => {
+    const a = asAddress(addr), n = typeof val === 'string' && /^0x/i.test(val) ? parseInt(val,16) : Number(val);
+    if (Number.isInteger(a) && a >= 0 && Number.isFinite(n)) out[a] = n & 0xFFFF;
+  };
+  const objects = [d && d.registers, d && d.regMap, d && d.rawRegisters];
+  objects.forEach(obj => {
+    if (obj && !Array.isArray(obj) && typeof obj === 'object') Object.keys(obj).forEach(k => put(k,obj[k]));
+  });
+  // A packed hex string or array is interpreted as contiguous registers starting at regStart (default 0).
+  // If firmware sends a different base, it must publish regStart explicitly.
+  const base = d && d.regStart !== undefined ? asAddress(d.regStart) : 0;
+  if (d && typeof d.regs === 'string' && /^[0-9a-f]+$/i.test(d.regs) && d.regs.length % 4 === 0) {
+    for (let i=0; i<d.regs.length/4; i++) put(base+i, parseInt(d.regs.substr(i*4,4),16));
+  } else if (d && Array.isArray(d.regs)) {
+    d.regs.forEach((v,i) => {
+      if (v && typeof v === 'object') put(v.address !== undefined ? v.address : v.addr, v.value);
+      else put(base+i,v);
+    });
+  }
+  // The separate settings topics are also genuine register blocks.
+  Object.keys(regBlocks || {}).forEach(k => {
+    const b = Number(k), arr = regBlocks[k];
+    if (Array.isArray(arr)) arr.forEach((v,i) => put(b+i,v));
+  });
+  return out;
+}
+function registerLabel(a) {
+  const labels = {
+    0x0038:'Pack voltage (÷10 V)',
+    0x0039:'Pack current ((raw−30000)÷10 A)',
+    0x003A:'State of charge (÷10 %)',
+    0x003C:'Cell count',
+    0x003D:'Temperature sensor count',
+    0x003E:'Maximum cell voltage (mV)',
+    0x003F:'Maximum cell number',
+    0x0040:'Minimum cell voltage (mV)',
+    0x0041:'Minimum cell number',
+    0x0042:'Cell voltage difference (mV)',
+    0x0043:'Maximum temperature (raw−40 °C)',
+    0x0044:'Maximum temperature sensor number',
+    0x0045:'Minimum temperature (raw−40 °C)',
+    0x0046:'Minimum temperature sensor number',
+    0x0047:'Temperature difference (°C)',
+    0x004B:'Remaining capacity (÷10 Ah)',
+    0x004C:'Cycle count (confirmed in DALY app)',
+    0x004D:'Unverified BLE/register field — raw only',
+    0x004E:'Balancer current candidate — raw only',
+    0x004F:'Balancing mask candidate — raw only',
+    0x0052:'Charge MOS state candidate',
+    0x0053:'Discharge MOS state candidate',
+    0x005A:'MOS temperature (raw−40 °C)',
+    0x0101:'Configured cell count candidate',
+    0x0106:'Configured temperature sensor count candidate',
+    0x0117:'Balancer current setting candidate',
+    0x0119:'Balancing enable setting candidate',
+    0x011A:'Balance start voltage candidate',
+    0x011B:'Balance start delta candidate'
+  };
+  if (a >= 0 && a <= 15) return 'Cell ' + (a+1) + ' voltage (mV)';
+  if (a >= 0x0030 && a <= 0x0033) return 'Temperature sensor ' + (a-0x0030+1) + ' (raw−40 °C)';
+  return labels[a] || 'Unverified register';
+}
+function engineeringValue(a,v) {
+  if (a >= 0 && a <= 15) return (v/1000).toFixed(3)+' V';
+  if (a >= 0x0030 && a <= 0x0033) return (v-40)+' °C';
+  switch(a) {
+    case 0x0038: return (v/10).toFixed(1)+' V';
+    case 0x0039: return ((v-30000)/10).toFixed(1)+' A';
+    case 0x003A: return (v/10).toFixed(1)+' %';
+    case 0x003C: case 0x003D: case 0x003F: case 0x0041: case 0x0044: case 0x0046: case 0x004C:
+      return String(v);
+    case 0x003E: case 0x0040: case 0x0042: return v+' mV';
+    case 0x0043: case 0x0045: case 0x005A: return (v-40)+' °C';
+    case 0x0047: return v+' °C';
+    case 0x004B: return (v/10).toFixed(1)+' Ah';
+    case 0x004D: return String(v)+' (raw; not decoded)';
+    case 0x004E: return String(v)+' (raw; not decoded)';
+    case 0x004F: return v+' / '+hex4(v)+' (raw mask; cell mapping unverified)';
+    case 0x0052: case 0x0053: return String(v)+' (raw; verify state encoding)';
+    case 0x0117: return v+' (raw setting; mA candidate)';
+    case 0x0119: return String(v)+' (raw setting; encoding unverified)';
+    case 0x011A: return (v/1000).toFixed(3)+' V (candidate)';
+    case 0x011B: return v+' mV (candidate)';
+    default: return String(v)+'  ('+hex4(v)+')';
+  }
+}
+function applyRegisterDerived(d) {
+  const r = extractRegisterMap(d);
+  const has = a => Object.prototype.hasOwnProperty.call(r,a);
+  if (!Array.isArray(d.cells) && Array.from({length:16},(_,i)=>has(i)).every(Boolean))
+    d.cells = Array.from({length:16},(_,i)=>r[i]);
+  if (!Array.isArray(d.temps) && [0x30,0x31,0x32,0x33].some(has))
+    d.temps = [0x30,0x31,0x32,0x33].filter(has).map(a=>r[a]-40);
+  if (d.v === undefined && has(0x0038)) d.v = r[0x0038]/10;
+  if (d.a === undefined && has(0x0039)) d.a = (r[0x0039]-30000)/10;
+  if (d.soc === undefined && has(0x003A)) d.soc = r[0x003A]/10;
+  if (d.remAh === undefined && has(0x004B)) d.remAh = r[0x004B]/10;
+  if (d.cycles === undefined && has(0x004C)) d.cycles = r[0x004C];
+  if (d.diffMv === undefined && has(0x0042)) d.diffMv = r[0x0042];
+  if (d.maxMv === undefined && has(0x003E)) d.maxMv = r[0x003E];
+  if (d.minMv === undefined && has(0x0040)) d.minMv = r[0x0040];
+  if (d.maxNo === undefined && has(0x003F)) d.maxNo = r[0x003F];
+  if (d.minNo === undefined && has(0x0041)) d.minNo = r[0x0041];
+  if (d.tMax === undefined && has(0x0043)) d.tMax = r[0x0043]-40;
+  if (d.tMin === undefined && has(0x0045)) d.tMin = r[0x0045]-40;
+  if (d.chg === undefined && has(0x0052) && (r[0x0052]===0 || r[0x0052]===1)) d.chg = r[0x0052];
+  if (d.dsg === undefined && has(0x0053) && (r[0x0053]===0 || r[0x0053]===1)) d.dsg = r[0x0053];
+  // Deliberately do not infer balancing state or active cells from 0x004D/0x004F.
+  d._registerMap = r;
+  return d;
+}
+function renderAll(d){
+  const tb = $('allBody'); if (!tb) return;
+  tb.textContent = '';
+  const add = (a,b,c,dim) => {
+    const tr = document.createElement('tr'); if (dim) tr.style.opacity='.78';
+    [a,b,c].forEach(t=>{ const td=document.createElement('td'); td.textContent=t; tr.appendChild(td); });
+    tb.appendChild(tr);
+  };
+  const r = d._registerMap || extractRegisterMap(d);
+  const addresses = Object.keys(r).map(Number).sort((a,b)=>a-b);
+  if (addresses.length) {
+    addresses.forEach(a=>add(registerLabel(a), engineeringValue(a,r[a]), hex4(a), !/^Cell |^Temperature sensor |^Pack voltage|^Pack current|^State of charge|^Cycle count/.test(registerLabel(a))));
+    setText('allNote', addresses.length+' registers received from the BMS. Known fields are decoded; unverified fields remain raw. Register addresses are exact, not array positions.');
+  } else {
+    add('Pack voltage', f1(Number(d.v))+' V', '');
+    add('Pack current', f1(Number(d.a))+' A', '');
+    add('State of charge', f1(Number(d.soc))+' %', '');
+    add('Remaining capacity', f1(Number(d.remAh))+' Ah', '');
+    add('Charge cycles', String(d.cycles ?? '—'), '');
+    add('Cell spread', String(d.diffMv ?? '—')+' mV', '');
+    add('Temperatures', String(d.tMax ?? '—')+' / '+String(d.tMin ?? '—')+' °C (max / min)', '');
+    setText('allNote', 'Showing decoded values from the ESP32 state payload. Raw register map was not included in this MQTT message.');
+  }
+}
+function renderHome(){
+  renderHeader();
+  const d = mode === 'demo' ? DEMO : live;
+  if (!d) {
+    ['sV','sA','sC','kDiff','kPow','kCyc','gPct','t1','t2','t3','t4'].forEach(id => setText(id, id[0]==='t' ? 'T'+id[1]+': —' : '—'));
+    ['cChg','cDsg','cBal'].forEach(id => { const e = $(id); e.textContent = '—'; e.className = 'na'; });
+    $('gArc').setAttribute('stroke-dasharray', '0 ' + CIRC);
+    cellEls.forEach(c => { c.cv.textContent = '—'; c.cv.dataset.k = ''; c.bat.style.setProperty('--lv', 0); });
+    drawAlarms([{ text: mode === 'live' ? 'Waiting for data from the ESP32' : '', sev:'info' }].filter(x => x.text));
+    setText('bBle','—'); setText('bRssi','—'); setText('bUp','—');
+    return;
+  }
+
+  // top stats
+  setText('sV', f1(d.v) + 'V');
+  const sA = $('sA');
+  sA.textContent = (d.a > 0 ? '+' : '') + f1(d.a) + 'A';
+  sA.className = d.a > 0.05 ? 'pos' : d.a < -0.05 ? 'neg' : '';
+  setText('sC', f1(d.remAh) + 'AH');
+
+  const chip = (id, val) => {
+    const e = $(id);
+    if (val === undefined || val === null) { e.textContent = 'N/A'; e.className = 'na'; return; }
+    e.textContent = val ? 'ON' : 'OFF'; e.className = val ? 'on' : 'off';
+  };
+  // MOS state comes from the BMS registers 0x0052/0x0053 (sent as chg/dsg). If they are missing, current flowing proves the
+  // matching MOS is on; otherwise it stays N/A rather than guessing.
+  const aNow = Number(d.a);
+  const chgV = d.chg !== undefined ? d.chg : (aNow > 0.5 ? 1 : undefined);
+  const dsgV = d.dsg !== undefined ? d.dsg : (aNow < -0.5 ? 1 : undefined);
+  chip('cChg', chgV); chip('cDsg', dsgV); chip('cBal', d.bal);
+  $('cChg').title = d.chg === undefined && chgV ? 'Charging current is flowing, so the charge MOS is on' : '';
+  $('cDsg').title = d.dsg === undefined && dsgV ? 'Discharging current is flowing, so the discharge MOS is on' : '';
+
+  // gauge
+  const soc = clamp(Number(d.soc) || 0, 0, 100);
+  $('gArc').setAttribute('stroke-dasharray', (soc/100*ARC).toFixed(2) + ' ' + CIRC);
+  setText('gPct', f1(Number(d.soc)) + '%');
+
+  // cells
+  const cells = Array.isArray(d.cells) ? d.cells : [];
+  let min = Infinity, max = -Infinity, imin = -1, imax = -1;
+  cells.forEach((mv, i) => { if (mv > 0) { if (mv < min) { min = mv; imin = i; } if (mv > max) { max = mv; imax = i; } } });
+  const spread = imin >= 0 ? max - min : (Number.isFinite(d.diffMv) ? d.diffMv : NaN);
+  cellEls.forEach((c, i) => {
+    const mv = cells[i];
+    if (!(mv > 0)) { c.cv.textContent = '—'; c.cv.dataset.k = ''; c.bat.style.setProperty('--lv', 0); c.bat.removeAttribute('title'); return; }
+    c.cv.textContent = (mv/1000).toFixed(3) + 'V';
+    const k = (min !== max) ? (i === imin ? 'min' : i === imax ? 'max' : '') : '';
+    c.cv.dataset.k = k;
+    c.bat.title = 'Cell ' + (i+1) + (k === 'min' ? ' (lowest)' : k === 'max' ? ' (highest)' : '');
+    c.bat.style.setProperty('--lv', clamp((mv - 3000) / 650, 0, 1) * 100);
+  });
+
+  setText('kDiff', Number.isFinite(spread) ? (spread/1000).toFixed(3) + 'V' : '—');
+  setText('kCyc', Number.isFinite(d.cycles) ? d.cycles + ' times' : '—');
+  const pw = Number(d.v) * Number(d.a);
+  setText('kPow', Number.isFinite(pw) ? (pw > 0 ? '+' : '') + Math.round(pw) + ' W' : '—');
+  setText('kTc', '—'); setText('kTd', '—');
+  try {   // lifetime totals come from the settings map (mAh as two 16-bit registers)
+    const c = [regAt(0x010D), regAt(0x010E), regAt(0x010F), regAt(0x0110)];
+    if (c.every(x => x !== undefined)) { setText('kTc', ((c[0] * 65536 + c[1]) / 1000).toFixed(3) + 'AH'); setText('kTd', ((c[2] * 65536 + c[3]) / 1000).toFixed(3) + 'AH'); }
+  } catch(e) {}
+
+  // alarms
+  const items = bmsAlarms(d);
+  if (d.ble === 0) items.unshift({ text: 'Bluetooth link to the BMS is down. The values shown are the last ones received.', sev: 'warn' });
+  if (Number.isFinite(spread) && spread >= DIFF_WARN) {
+    items.push({
+      text: 'Cell imbalance ' + Math.round(spread) + ' mV' + (imin >= 0 ? ': cell ' + (imin+1) + ' lowest, cell ' + (imax+1) + ' highest' : ''),
+      sev: spread >= DIFF_CRIT ? 'crit' : 'warn'
+    });
+  }
+  if (typeof d.fault === 'string' && /[1-9A-F]/i.test(d.fault)) items.push({ text:'BMS fault registers (raw): ' + d.fault.replace(/(....)/g,'$1 ').trim() + (typeof d.alarm === 'string' ? '' : '. Names above follow the Daly flag table; the byte order was confirmed on this BMS by one real event, other bits are not yet confirmed.'), sev:'info' });
+  if (d.chg === 0) items.push({ text:'Charge MOS OFF', sev:'info' });
+  if (d.dsg === 0) items.push({ text:'Discharge MOS OFF', sev:'info' });
+  if (!items.length) items.push({ text:'No active alarms', sev:'ok' });
+  drawAlarms(items);
+
+  // temperatures
+  const tt = Array.isArray(d.temps) ? d.temps : [];
+  [1,2,3,4].forEach(n => setText('t'+n, 'T'+n+': ' + (Number.isFinite(tt[n-1]) ? tt[n-1] + '°C' : '—')));
+
+  // bridge
+  setText('bBle', d.ble === 0 ? 'Not connected' : 'Connected');
+  setText('bRssi', Number.isFinite(d.rssi) ? d.rssi + ' dBm' : '—');
+  setText('bUp', mode === 'demo' ? '—' : fmtUp(d.up));
+  renderAll(d);
+}
+
+function drawAlarms(items){
+  const ul = $('alarms'); ul.textContent = '';
+  items.forEach(it => {
+    const li = document.createElement('li');
+    const dot = document.createElement('span'); dot.className = 'd ' + (it.sev === 'ok' ? '' : it.sev);
+    const tx = document.createElement('span'); tx.textContent = it.text;
+    li.append(dot, tx); ul.appendChild(li);
+  });
+}
+
+/* ================= render: trend ================= */
+function niceStep(r){ const p = Math.pow(10, Math.floor(Math.log10(r))); const n = r / p; return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10) * p; }
+
+const CHARTS = [
+  { host:'chA', val:'vA', key:'a',      unit:'A',  label:'Pack current',  dec:1, zero:true,  minSpan:2 },
+  { host:'chV', val:'vV', key:'v',      unit:'V',  label:'Pack voltage',  dec:1, zero:false, minSpan:1 },
+  { host:'chS', val:'vS', key:'spread', unit:'mV', label:'Cell spread',   dec:0, zero:false, minSpan:20 },
+  { host:'chC', val:'vC', key:'soc',    unit:'%',  label:'State of charge', dec:1, zero:false, minSpan:5 }
+];
+
+function drawChart(o){
+  const host = $(o.host);
+  if (host._active) return;
+  host.textContent = '';
+  const pts = (o.pts || hist).filter(p => Number.isFinite(p[o.key]));
+  setText(o.val, pts.length ? pts[pts.length-1][o.key].toFixed(o.dec) + ' ' + o.unit : '—');
+  if (pts.length < 2) {
+    const p = document.createElement('p'); p.className = 'empty';
+    p.textContent = pts.length ? 'Collecting data…' : (o.pts ? 'No saved samples in this period.' : 'No history yet. It builds up while this page is open and receiving live data.');
+    host.appendChild(p); return;
+  }
+  const W = 320, H = 150, L = 40, R = 10, T = 10, B = 20, iw = W - L - R, ih = H - T - B;
+  const t0 = pts[0].t, t1 = pts[pts.length-1].t, span = Math.max(t1 - t0, 1);
+  const vals = pts.map(p => p[o.key]);
+  let lo = Math.min.apply(null, vals), hi = Math.max.apply(null, vals);
+  if (o.zero) { lo = Math.min(lo, 0); hi = Math.max(hi, 0); }
+  if (hi - lo < o.minSpan) { const mid = (hi + lo) / 2; lo = mid - o.minSpan/2; hi = mid + o.minSpan/2; }
+  const step = niceStep((hi - lo) / 3);
+  lo = Math.floor(lo / step) * step; hi = Math.ceil(hi / step) * step;
+  const dec = Math.max(0, -Math.floor(Math.log10(step) + 1e-9));
+  const X = t => L + (t - t0) / span * iw;
+  const Y = v => T + (hi - v) / (hi - lo) * ih;
+
+  let s = '<svg class="cs" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="' + o.label + ' over the last ' + fmtSpan(span) + '">';
+  for (let v = lo; v <= hi + step/2; v += step) {
+    const yy = Y(v).toFixed(1);
+    s += '<line class="gl" x1="' + L + '" x2="' + (W-R) + '" y1="' + yy + '" y2="' + yy + '"/>';
+    s += '<text class="tk" x="' + (L-6) + '" y="' + (Number(yy)+3.5).toFixed(1) + '" text-anchor="end">' + v.toFixed(dec) + '</text>';
+  }
+  if (o.zero && lo < 0 && hi > 0) s += '<line class="zl" x1="' + L + '" x2="' + (W-R) + '" y1="' + Y(0).toFixed(1) + '" y2="' + Y(0).toFixed(1) + '"/>';
+  const sd = t => { const d = new Date(t); return (d.getMonth()+1) + '/' + d.getDate() + ' ' + pad2(d.getHours()) + ':' + pad2(d.getMinutes()); };
+  s += '<text class="tk" x="' + L + '" y="' + (H-4) + '">' + (o.pts ? sd(t0) : fmtSpan(span) + ' ago') + '</text>';
+  s += '<text class="tk" x="' + (W-R) + '" y="' + (H-4) + '" text-anchor="end">' + (o.pts ? sd(t1) : 'now') + '</text>';
+  let d = '';
+  pts.forEach((p, i) => { d += ((i === 0 || p.t - pts[i-1].t > (o.pts ? 600000 : 60000)) ? 'M' : 'L') + X(p.t).toFixed(1) + ' ' + Y(p[o.key]).toFixed(1); });
+  s += '<path class="ln" d="' + d + '"/>';
+  const lp = pts[pts.length-1];
+  s += '<circle class="ep" cx="' + X(lp.t).toFixed(1) + '" cy="' + Y(lp[o.key]).toFixed(1) + '" r="4"/>';
+  s += '<line class="xh" y1="' + T + '" y2="' + (T+ih) + '" style="display:none"/><circle class="hv" r="4" style="display:none"/>';
+  s += '<rect class="hit" x="' + L + '" y="' + T + '" width="' + iw + '" height="' + ih + '" fill="transparent" tabindex="0" aria-label="' + o.label + ', use left and right arrow keys to read values"/></svg>';
+  host.innerHTML = s;
+
+  const svg = host.querySelector('svg'), xh = host.querySelector('.xh'), hv = host.querySelector('.hv'), hit = host.querySelector('.hit');
+  const tip = document.createElement('div'); tip.className = 'tip'; tip.hidden = true; host.appendChild(tip);
+  let sel = pts.length - 1;
+  const clear = () => { xh.style.display = 'none'; hv.style.display = 'none'; tip.hidden = true; };
+  function show(i){
+    sel = clamp(i, 0, pts.length - 1);
+    const p = pts[sel], px = X(p.t), py = Y(p[o.key]);
+    xh.setAttribute('x1', px); xh.setAttribute('x2', px); xh.style.display = '';
+    hv.setAttribute('cx', px); hv.setAttribute('cy', py); hv.style.display = '';
+    tip.replaceChildren();
+    const b = document.createElement('b'); b.textContent = p[o.key].toFixed(o.dec) + ' ' + o.unit;
+    const row = document.createElement('span');
+    const k = document.createElement('i'); k.className = 'k';
+    row.append(k, document.createTextNode(o.label + ' · ' + (o.pts ? sd(p.t) : clock(p.t))));
+    tip.append(b, row); tip.hidden = false;
+    const hw = host.clientWidth, tw = tip.offsetWidth;
+    tip.style.left = clamp(px / W * hw, tw/2, hw - tw/2) + 'px';
+  }
+  function near(e){
+    const r = svg.getBoundingClientRect(), px = (e.clientX - r.left) / r.width * W;
+    let best = 0, bd = Infinity;
+    for (let i = 0; i < pts.length; i++) { const dx = Math.abs(X(pts[i].t) - px); if (dx < bd) { bd = dx; best = i; } }
+    return best;
+  }
+  const move = e => { host._active = true; show(near(e)); };
+  const leave = () => { host._active = false; clear(); };
+  hit.addEventListener('pointerdown', move);
+  hit.addEventListener('pointermove', move);
+  hit.addEventListener('pointerleave', leave);
+  hit.addEventListener('pointercancel', leave);
+  hit.addEventListener('blur', leave);
+  hit.addEventListener('keydown', e => {
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+      e.preventDefault(); host._active = true; show(sel + (e.key === 'ArrowLeft' ? -1 : 1));
+    }
+  });
+}
+
+function renderTrend(){
+  CHARTS.forEach(drawChart);
+  const tb = $('tbody'); tb.textContent = '';
+  hist.slice(-12).reverse().forEach(p => {
+    const tr = document.createElement('tr');
+    [clock(p.t), f1(p.v), f1(p.a), f1(p.soc), Number.isFinite(p.spread) ? String(Math.round(p.spread)) : '—'].forEach(t => {
+      const td = document.createElement('td'); td.textContent = t; tr.appendChild(td);
+    });
+    tb.appendChild(tr);
+  });
+  if (!hist.length) {
+    const tr = document.createElement('tr'); const td = document.createElement('td');
+    td.colSpan = 5; td.textContent = 'No readings yet'; td.style.textAlign = 'center'; tr.appendChild(td); tb.appendChild(tr);
+  }
+}
+
+/* ================= data in ================= */
+let lastSoc = null;
+const SOC_JUMP = 3;   // % change between two samples that is logged as a jump
+function applyState(d, isRetained){
+  d = applyRegisterDerived(d);
+  live = d; liveAt = Date.now(); retained = isRetained;
+  if (!isRetained) {
+    const sc = Number(d.soc);
+    if (Number.isFinite(sc)) {
+      if (mode === 'live' && lastSoc !== null && Math.abs(sc - lastSoc) >= SOC_JUMP)
+        logEvent('EVENT', 'soc-jump', 'warn', 'SOC jumped from ' + f1(lastSoc) + '% to ' + f1(sc) + '% in one reading');
+      lastSoc = sc;
+    }
+  }
+  if (!isRetained) {
+    let spread = d.diffMv;
+    if (Array.isArray(d.cells)) {
+      const c = d.cells.filter(x => x > 0);
+      if (c.length) spread = Math.max.apply(null, c) - Math.min.apply(null, c);
+    }
+    hist.push({ t: liveAt, v: Number(d.v), a: Number(d.a), soc: Number(d.soc), spread: Number(spread) });
+    if (hist.length > HIST_MAX) hist.shift();
+  }
+  renderHome();
+  evalIssues();
+  if (currentView() === 'trend') renderTrend();
+}
+
+/* Protection settings as shown in the Daly app (15 Nov 2026) against recommended LiFePO4 16S values.
+   status: crit = looser than recommended (could hide a fault), warn = check, ok = fine. */
+const regBlocks = {};     // start address -> array of 16-bit register values (read-only parameter scan)
+const SET_DATE = '15 Nov 2026';
+const SET_REVIEW = [
+  ['Voltage and current'],
+  ['Cell overvolt protect', '3.7 V', '3.60 to 3.65 V', 'crit', 'Above the 3.65 V LiFePO4 maximum (Daly spec 3.65 V +/-0.05 V). A cell can reach 3.7 V before the BMS cuts charging.'],
+  ['Cell undervolt protect', '2.6 V', '2.8 to 3.0 V', 'warn', 'Inside the usual 2.5 V cell minimum but with little margin. 2.8 V is gentler on the cells and costs almost no capacity.'],
+  ['Total overvolt protect', '58.0 V', '57.6 to 58.4 V', 'ok', '3.625 V per cell. Trips before the cell limit, which is correct.'],
+  ['Total undervolt protect', '43.2 V', '44.8 V or higher', 'warn', '2.70 V per cell. Raise together with the cell undervolt value (16 x 2.8 V = 44.8 V).'],
+  ['Volt diff protect', '0.5 V', '0.2 to 0.3 V', 'crit', '500 mV between cells hides a serious imbalance. Your pack runs at about 24 mV, so 0.3 V leaves plenty of room and will not cause nuisance trips.'],
+  ['Charge overcurrent protect', '80 A', '50 to 60 A', 'warn', '0.8C. Standard LiFePO4 charge is 0.5C (50 A). Higher only if the cell datasheet allows it. Also set the inverter charge limit below this.'],
+  ['Discharge overcurrent protect', '125 A', '100 A (1C)', 'crit', 'Above 1C and above the 100 A BMS rating. A 5 kW inverter at about 46 V can draw about 110 A, so ask Hykon whether the BMS or the inverter load limit is wrong.'],
+  ['Short circuit current', '1500 A', '300 to 500 A', 'crit', 'Far above what a 100 A board can interrupt. Use the lowest option that still lets the inverter start (confirm the exact value with Daly).'],
+  ['HW short circuit protect', 'Open', 'Keep enabled', 'ok', 'Hardware protection stays on.'],
+  ['Board 1 / 2 / 3 cell qty', '16 / 0 / 0', '16 / 0 / 0', 'ok', 'Matches 16 cells.'],
+  ['Temperature'],
+  ['Charge high temp protect', '60 C', '45 to 55 C', 'crit', 'Daly advises charging LiFePO4 below 45 C and cell datasheets usually stop at 55 C.'],
+  ['Charge low temp protect', '0 C', '0 to 5 C', 'ok', 'Never charge LiFePO4 below 0 C.'],
+  ['Discharge high temp protect', '65 C', '55 to 60 C', 'crit', 'Cell datasheets usually allow 60 C maximum.'],
+  ['Discharge low temp protect', '-25 C', '-20 C', 'warn', 'Cell datasheets usually allow -20 C. Harmless in Kerala, but it is outside the cell rating.'],
+  ['Temp diff protect', '15 C', '10 to 15 C', 'ok', ''],
+  ['Heating start / stop', '0 C / 5 C', '0 C / 5 C', 'ok', 'Only matters if a heater is fitted (heating shows OFF).'],
+  ['Temp ctrl qty', '4', '4', 'ok', 'Matches the 4 sensors.'],
+  ['NTC offline protect', 'Protection on', 'Protection on', 'ok', '"Disable NTC offline protect" is Close, so a broken sensor is still caught.'],
+  ['Balancing'],
+  ['Balance start voltage', '3.3 V', '3.40 to 3.45 V', 'warn', 'Below about 3.4 V the LiFePO4 curve is flat and cell voltages say little. Balancing near the top of charge is more effective.'],
+  ['Balance start volt diff', '0.02 V', '0.01 to 0.03 V', 'ok', ''],
+  ['Balance start current', '1.0 A', 'Leave as set', 'ok', ''],
+  ['Active balancing hardware', 'Fitted (user-confirmed)', 'Confirm firmware-reported operating state', 'info', 'The battery is an active-balancing model. The current register snapshot was captured while the DALY app showed balancing OFF; no unverified register is used to infer ON/OFF.'],
+  ['Pack and communication'],
+  ['Battery type / rated capacity', 'LFP / 100 Ah', 'LFP / 100 Ah', 'ok', ''],
+  ['Inverter type', 'VOLTRONICPOWER', 'Hykon HSH-5 protocol', 'warn', 'If the BMS is cabled to the inverter, the protocol must match the HSH-5. Otherwise the inverter ignores the BMS charge and discharge limits. Ask Hykon which setting to use.'],
+  ['Total charge / discharge Ah', '42505 / 44323 Ah', 'Discharge below charge', 'warn', 'Over its life a LiFePO4 pack cannot discharge 4% more than it charged. This points to a current-sensor offset, which makes SOC drift. Ask Hykon to calibrate the current reading.']
+];
+
+/* ---- live settings, decoded from the BMS register map (confirmed against the Daly app: 15 Nov 2026) ---- */
+let peaks = null, peaksTried = false;
+async function loadPeaks(){
+  try {
+    if (!sb || !sb.key) return;
+    const one = async q => { const r = await sbGet('battery_samples?select=ts,v,max_mv,diff_mv&' + q + '&limit=1'); return r && r[0] ? r[0] : null; };
+    const a = await one('max_mv=not.is.null&order=max_mv.desc'), b = await one('v=not.is.null&order=v.desc'), c = await one('diff_mv=not.is.null&order=diff_mv.desc');
+    peaks = { cell: a, pack: b, spread: c };
+    renderReview();
+  } catch(e) {}
+}
+function reviewHaveLive(){ return !!(regBlocks[0x0100] && regBlocks[0x0120] && regBlocks[0x0140] && regBlocks[0x0160]); }
+function reviewRows(){
+  if (!reviewHaveLive()) return SET_REVIEW;
+  const g = regAt, out = [];
+  const q = a => { const x = [g(a), g(a+1), g(a+2), g(a+3), g(a+4)]; return x.slice(0,4).some(v => v === undefined) ? null : x; };
+  const n = (v, d) => (Math.round(v * Math.pow(10, d)) / Math.pow(10, d)).toFixed(d);
+  const add = (name, set, rec, st, why, detail) => out.push([name, set, rec, st, why || '', detail || '']);
+  const th = (name, base, conv, unit, dec, rec, judge, why) => {
+    const x = q(base); if (!x) return;
+    const v = conv(x[1]);
+    add(name, n(v, dec) + ' ' + unit, rec, judge(v), why,
+        'Level 1 (warning) ' + n(conv(x[0]), dec) + ' ' + unit + '  |  Level 2 (protection, shown above) ' + n(v, dec) + ' ' + unit + '  |  Return ' + n(conv(x[2]), dec) + ' ' + unit + '  |  Delay ' + x[3] + ' ms');
+  };
+  const cur = (name, base, conv, rec, judge, why) => {
+    const x = q(base); if (!x || x[4] === undefined) return;
+    const v = conv(x[1]);
+    add(name, n(v, 1) + ' A', rec, judge(v), why,
+        'Level 1 ' + n(conv(x[0]), 1) + ' A  |  Level 2 ' + n(v, 1) + ' A (shown above)  |  Level 3 ' + n(conv(x[3]), 1) + ' A  |  Delay ' + x[2] + ' ms / ' + x[4] + ' ms');
+  };
+  const mv = r => r / 1000, dv = r => r / 10, t40 = r => r - 40;
+  out.push(['Voltage and current']);
+  th('Cell overvolt protect', 0x0130, mv, 'V', 2, '3.60 to 3.65 V', v => v > 3.65 ? 'crit' : 'ok', 'Above the 3.65 V LiFePO4 maximum (Daly spec 3.65 V +/-0.05 V). A cell can reach this voltage before the BMS cuts charging.');
+  th('Cell undervolt protect', 0x0134, mv, 'V', 2, '2.8 to 3.0 V', v => v >= 2.8 ? 'ok' : v >= 2.5 ? 'warn' : 'crit', 'Inside the usual 2.5 V cell minimum but with little margin. 2.8 V is gentler on the cells and costs almost no capacity.');
+  th('Total overvolt protect', 0x0138, dv, 'V', 1, '57.6 to 58.4 V', v => v > 58.4 ? 'crit' : 'ok', 'Above 16 x 3.65 V.');
+  th('Total undervolt protect', 0x013C, dv, 'V', 1, '44.8 V or higher', v => v >= 44.8 ? 'ok' : v >= 40 ? 'warn' : 'crit', 'Raise together with the cell undervolt value (16 x 2.8 V = 44.8 V).');
+  th('Volt diff protect', 0x015A, mv, 'V', 2, '0.2 to 0.3 V', v => v <= 0.3 ? 'ok' : v <= 0.4 ? 'warn' : 'crit', '500 mV between cells hides a serious imbalance. A healthy pack runs at a few tens of mV, so 0.3 V will not cause nuisance trips.');
+  cur('Charge overcurrent protect', 0x0140, r => (30000 - r) / 10, '50 to 60 A', v => v <= 60 ? 'ok' : v <= 80 ? 'warn' : 'crit', 'Standard LiFePO4 charge is 0.5C (50 A) unless the cell datasheet allows more. Also set the inverter charge limit below this.');
+  cur('Discharge overcurrent protect', 0x0145, r => (r - 30000) / 10, '100 A (1C)', v => v <= 100 ? 'ok' : 'crit', 'Above 1C and above the 100 A BMS rating. A 5 kW inverter at about 46 V can draw about 110 A, so ask Hykon whether the BMS or the inverter load limit is wrong.');
+  { const v = g(0x016E); if (v !== undefined) add('Short circuit current', v + ' A', '300 to 500 A', v <= 500 ? 'ok' : 'crit', 'Far above what a 100 A board can interrupt. Use the lowest option that still lets the inverter start (confirm the exact value with Daly).'); }
+  out.push(['Temperature']);
+  th('Charge high temp protect', 0x014A, t40, 'C', 0, '45 to 55 C', v => v <= 55 ? 'ok' : 'crit', 'Daly advises charging LiFePO4 below 45 C and cell datasheets usually stop at 55 C.');
+  th('Charge low temp protect', 0x014E, t40, 'C', 0, '0 to 5 C', v => v < 0 ? 'crit' : v <= 5 ? 'ok' : 'warn', 'Never charge LiFePO4 below 0 C.');
+  th('Discharge high temp protect', 0x0152, t40, 'C', 0, '55 to 60 C', v => v <= 60 ? 'ok' : 'crit', 'Cell datasheets usually allow 60 C maximum.');
+  th('Discharge low temp protect', 0x0156, t40, 'C', 0, '-20 C', v => v >= -20 ? 'ok' : 'warn', 'Cell datasheets usually allow -20 C. Harmless in Kerala, but it is outside the cell rating.');
+  th('Temp diff protect', 0x015E, r => r, 'C', 0, '10 to 15 C', v => v <= 15 ? 'ok' : 'warn', '');
+  th('MOSFET over-temp protect', 0x0166, t40, 'C', 0, 'As set by the maker', () => 'info', '');
+  out.push(['Balancing']);
+  { const a = g(0x011A), b = g(0x011B);
+    if (a !== undefined) add('Balance start voltage', n(a / 1000, 2) + ' V', '3.40 to 3.45 V', a >= 3400 ? 'ok' : 'warn', 'Below about 3.4 V the LiFePO4 curve is flat and cell voltages say little. Balancing near the top of charge is more effective.');
+    if (b !== undefined) add('Balance start volt diff', n(b / 1000, 3) + ' V', '0.01 to 0.03 V', b <= 30 ? 'ok' : 'warn', ''); }
+  out.push(['Pack and checks']);
+  { const cap = (g(0x0109) * 65536 + g(0x010A)) / 1000, chg = (g(0x010D) * 65536 + g(0x010E)) / 1000, dsg = (g(0x010F) * 65536 + g(0x0110)) / 1000;
+    if (Number.isFinite(cap)) add('Rated capacity', n(cap, 1) + ' Ah', '100 Ah', cap === 100 ? 'ok' : 'warn', '');
+    if (Number.isFinite(chg) && Number.isFinite(dsg)) add('Total charged / discharged', n(chg, 1) + ' / ' + n(dsg, 1) + ' Ah', 'Discharge below charge', dsg <= chg ? 'ok' : 'warn', 'Over its life a LiFePO4 pack cannot discharge more than it charged. This points to a current-sensor offset, which makes SOC drift. Ask Hykon to calibrate the current reading.'); }
+  { const c = g(0x0121), d = g(0x0122); if (c !== undefined && d !== undefined) add('Charge / discharge switch', (c ? 'ON' : 'OFF') + ' / ' + (d ? 'ON' : 'OFF'), 'ON / ON', c && d ? 'ok' : 'warn', 'Matches the Charge Switch and Discharge Switch in the Daly app Control screen.'); }
+  { const sl = g(0x0115); if (sl !== undefined) add('Sleep wait time', sl === 6553 || sl === 6553.5 ? '65530 s (never sleep)' : (sl * 10) + ' s', 'Leave as set', 'info', ''); }
+  { const w = [g(0x0126), g(0x0127), g(0x0128)];
+    if (w.every(x => x !== undefined)) add('Setting password', w[0] === 0x3132 && w[1] === 0x3334 && w[2] === 0x3536 ? 'Factory default' : 'Changed', 'Not the default', w[0] === 0x3132 && w[1] === 0x3334 && w[2] === 0x3536 ? 'warn' : 'ok', 'Anyone with the Daly app near the battery can change every limit above. Change the password in the Daly app (Control, Change Setting Password) and keep it with the company.'); }
+  { const c = [g(0x0123), g(0x0124), g(0x0125)];
+    if (c.every(x => x !== undefined && x > 0)) {
+      const bt = new Date(2000 + (c[0] >> 8), (c[0] & 255) - 1, c[1] >> 8, c[1] & 255, c[2] >> 8, c[2] & 255), off = Math.abs(Date.now() - bt.getTime()) / 60000;
+      add('BMS clock', fullTime(bt.getTime()), 'Within a few minutes of real time', off <= 10 ? 'ok' : 'warn', 'The BMS stamps its own fault journal with this clock, so a wrong time makes the history hard to use.'); } }
+  const ascii = (a, k) => { let o = ''; for (let i = 0; i < k; i++) { const v = g(a + i); if (v === undefined) return ''; o += String.fromCharCode(v >> 8, v & 255); } return o.replace(/[^\x20-\x7e]/g, '').trim(); };
+  out.push(['Version info (as stored in the BMS)']);
+  [['BMS software version', 0x0178, 7], ['BMS hardware version', 0x0186, 7], ['Serial number', 0x018D, 7], ['Battery code', 0x0199, 6]].forEach(v => { const t = ascii(v[1], v[2]); if (t) add(v[0], t, '', 'info', ''); });
+  if (peaks && peaks.cell) {
+    out.push(['Highest values in the saved history (one sample a minute, so real peaks may be a little higher)']);
+    const when = r => r && r.ts ? fullTime(Date.parse(r.ts)).slice(0, 16) : '';
+    const cm = Number(peaks.cell.max_mv), pv = peaks.pack ? Number(peaks.pack.v) : NaN, sd = peaks.spread ? Number(peaks.spread.diff_mv) : NaN;
+    add('Highest cell voltage', n(cm / 1000, 3) + ' V (' + when(peaks.cell) + ')', 'Below 3.60 V', cm > 3650 ? 'crit' : cm > 3600 ? 'warn' : 'ok', 'Above the 3.65 V LiFePO4 maximum. Ask Hykon to lower the inverter charge limit (about 56.8 to 57.6 V) so charging ends before any cell passes 3.60 V.');
+    if (Number.isFinite(pv)) add('Highest pack voltage', n(pv, 1) + ' V (' + when(peaks.pack) + ')', 'Below 57.6 V', pv >= 58 ? 'crit' : pv > 57.6 ? 'warn' : 'ok', 'Reached the BMS total overvolt level. Charging should end on the charger setting, not on the BMS protection.');
+    if (Number.isFinite(sd)) add('Largest cell spread', sd + ' mV (' + when(peaks.spread) + ')', 'Under 30 mV at rest', 'info', 'Under heavy current or at the top of charge a larger spread is normal. Check it again after the pack has rested.');
+  }
+  out.push(['From the Daly app (cannot be read here yet)']);
+  add('Inverter type', 'VOLTRONICPOWER (Daly app)', 'Hykon HSH-5 protocol', 'warn', 'If the BMS is cabled to the inverter, the protocol must match the HSH-5. Otherwise the inverter ignores the BMS charge and discharge limits. Ask Hykon which setting to use.');
+  add('Active balancing hardware', 'Fitted (user-confirmed)', 'Verify live state from BLE protocol', 'info', 'The current snapshot was taken while the DALY app showed balancing OFF. The dashboard deliberately does not infer balancing ON/OFF from 0x004D or cell activity from 0x004F until the exact BLE mapping is verified.');
+  add('Balance stop voltage', 'Not set (-1 mV in the Daly app)', 'Leave as set', 'info', '');
+  return out;
+}
+function renderReview(){
+  const b = $('revBody'); if (!b) return;
+  if (!peaksTried) { try { if (sb && sb.key) { peaksTried = true; loadPeaks(); } } catch(e) {} }
+  b.textContent = '';
+  const cnt = { crit:0, warn:0, ok:0 };
+  let ul = null;
+  const LIVE = reviewHaveLive();
+  reviewRows().forEach(r => {
+    if (r.length === 1) {
+      const h = document.createElement('div'); h.className = 'note'; h.style.fontWeight = '700'; h.style.marginTop = '10px'; h.textContent = r[0];
+      b.appendChild(h); ul = document.createElement('ul'); ul.className = 'ev'; b.appendChild(ul); return;
+    }
+    if (cnt[r[3]] !== undefined) cnt[r[3]]++;
+    const li = document.createElement('li'), r1 = document.createElement('div'); r1.className = 'r1';
+    const tag = document.createElement('span'); tag.className = 'tag ' + (r[3] === 'info' ? '' : r[3]); tag.textContent = r[3] === 'crit' ? 'TOO LOOSE' : r[3] === 'warn' ? 'CHECK' : r[3] === 'info' ? 'INFO' : 'OK';
+    const nm = document.createElement('b'); nm.textContent = r[0];
+    r1.appendChild(tag); r1.appendChild(nm); li.appendChild(r1);
+    const v = document.createElement('div'); v.className = 'snap'; v.textContent = (/^(Highest|Largest)/.test(r[0]) ? 'Seen: ' : LIVE ? 'Set in the BMS: ' : 'Set (Daly app, ' + SET_DATE + '): ') + r[1] + (r[2] ? '   Recommended: ' + r[2] : ''); li.appendChild(v);
+    if (r[5]) { const w = document.createElement('div'); w.className = 'snap'; w.textContent = r[5]; li.appendChild(w); }
+    if (r[4] && r[3] !== 'ok' && r[3] !== 'info') { const w = document.createElement('div'); w.className = 'snap'; w.textContent = r[4]; li.appendChild(w); }
+    ul.appendChild(li);
+  });
+  setText('revSum', cnt.crit + ' too loose, ' + cnt.warn + ' to check, ' + cnt.ok + ' fine' + (LIVE ? ' (values read live from the BMS).' : ' (typed from the Daly app, ' + SET_DATE + '; waiting for the live read).'));
+}
+function reviewText(){
+  const L = ['BMS PROTECTION SETTINGS vs RECOMMENDED (' + (reviewHaveLive() ? 'read live from the BMS' : 'as shown in the Daly app, ' + SET_DATE) + ')',
+    'Battery: ' + (cfg.name || 'My battery') + ', 16S LiFePO4 100 Ah, Daly Smart BMS, SN ' + (details.serial || 'n/a'),
+    'Request: please confirm the correct values for this cell and BMS, and reset any setting that is looser than the cell datasheet allows. Limits should not be raised to avoid faults.', ''];
+  reviewRows().forEach(r => {
+    if (r.length === 1) { L.push(r[0].toUpperCase()); return; }
+    L.push('[' + (r[3] === 'crit' ? 'TOO LOOSE' : r[3] === 'warn' ? 'CHECK' : r[3] === 'info' ? 'INFO' : 'OK') + '] ' + r[0] + ': set ' + r[1] + (r[2] ? ', recommended ' + r[2] : '') + (r[5] ? ' (' + r[5] + ')' : '') + (r[4] && r[3] !== 'ok' && r[3] !== 'info' ? ' - ' + r[4] : ''));
+  });
+  L.push('', 'Basis: Daly published LiFePO4 specification (cell over-voltage 3.65 V +/-0.05 V, not above the cell specification, charge below 45 C) and typical LiFePO4 cell datasheets. The cell maker datasheet is the final authority.');
+  return L.join('\n');
+}
+renderReview();
+$('revShare').addEventListener('click', async () => {
+  const t = reviewText();
+  try { if (navigator.share) { await navigator.share({ title: 'BMS settings review', text: t }); return; } } catch(e) { if (e && e.name === 'AbortError') return; }
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(t).then(() => setText('revMsg', 'Sharing is not available here, so the review was copied. Paste it into WhatsApp or email.'), () => setText('revMsg', 'Copy was blocked by the browser.'));
+});
+$('revCopy').addEventListener('click', () => {
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(reviewText()).then(() => setText('revMsg', 'Review copied.'), () => setText('revMsg', 'Copy was blocked by the browser.'));
+});
+
+let settingsFrames = null;
+function regTable(){
+  const rows = [];
+  Object.keys(regBlocks).map(Number).sort((a,b) => a-b).forEach(st => regBlocks[st].forEach((v,i) => { const a = st + i; if (v !== 0 && !(a >= 0x0126 && a <= 0x0128)) rows.push([a, v]); }));   // 0x0126-0x0128 is the setting password: never shown or shared
+  return rows;
+}
+function regAt(a){ const st = a - (a % 32), blk = regBlocks[st]; return blk ? blk[a - st] : undefined; }
+function renderLive(){
+  const b = $('liveBody'); if (!b) return;
+  const have = Object.keys(regBlocks).length;
+  if (!have) return;
+  b.textContent = '';
+  const ul2 = document.createElement('ul'); ul2.className = 'ev'; b.appendChild(ul2);
+  [['Remaining capacity', 0x004B, v => (v / 10).toFixed(1) + ' Ah'],
+   ['Cycle count', 0x004C, v => v],
+   ['Cell spread', 0x0042, v => v + ' mV'],
+   ['Temperature spread', 0x0047, v => v + ' C'],
+   ['Charge MOS (1 = on)', 0x0052, v => v ? 'ON' : 'OFF'],
+   ['Discharge MOS (1 = on)', 0x0053, v => v ? 'ON' : 'OFF']].forEach(r => {
+    const v = regAt(r[1]); const li = document.createElement('li'); const d = document.createElement('div'); d.className = 'r1';
+    const nm = document.createElement('b'); nm.textContent = r[0]; d.appendChild(nm); li.appendChild(d);
+    const w = document.createElement('div'); w.className = 'snap';
+    w.textContent = '0x' + r[1].toString(16).toUpperCase().padStart(4,'0') + ' = ' + (v === undefined ? 'waiting' : v + '   ->   ' + r[2](v));
+    li.appendChild(w); ul2.appendChild(li);
+  });
+  setText('liveSum', have + ' of 18 register blocks received.');
+}
+function renderSettings(){
+  renderLive();
+  renderReview();
+  const b = $('setBody'); if (!b) return;
+  const rows = regTable();
+  if (rows.length) {
+    b.textContent = '';
+    const ul = document.createElement('ul'); ul.className = 'ev';
+    rows.forEach(r => { const li = document.createElement('li');
+      li.textContent = '0x' + r[0].toString(16).toUpperCase().padStart(4,'0') + ' (' + r[0] + ')   =   ' + r[1] + '   (0x' + r[1].toString(16).toUpperCase().padStart(4,'0') + ')';
+      ul.appendChild(li); });
+    b.appendChild(ul);
+    setText('setMsg', rows.length + ' non-zero settings registers read from the BMS (' + Object.keys(regBlocks).length + ' blocks). Read only. Send a copy together with the Daly app settings screens so each one can be named.');
+    return;
+  }
+  if (!settingsFrames) return;
+  b.textContent = '';
+  const keys = Object.keys(settingsFrames).filter(k => /^c[0-9A-F]{2}$/.test(k)).sort();
+  if (!keys.length) { b.innerHTML = '<p class="note">The BMS did not answer the settings requests.</p>'; return; }
+  const ul = document.createElement('ul'); ul.className = 'ev';
+  keys.forEach(k => { const li = document.createElement('li'); li.textContent = '0x' + k.slice(1) + '   ' + String(settingsFrames[k]).replace(/(..)/g, '$1 ').trim(); ul.appendChild(li); });
+  b.appendChild(ul);
+}
+function onMsg(topic, text, packet){
+  const sm = /\/settings\/([0-9A-Fa-f]{4})$/.exec(topic);
+  if (sm) { try { const j = JSON.parse(text), arr = []; for (let i = 0; i + 4 <= j.regs.length; i += 4) arr.push(parseInt(j.regs.substr(i,4),16)); regBlocks[Number(j.start)] = arr; renderSettings(); } catch(e){} return; }
+  if (/\/settings$/.test(topic)) { try { settingsFrames = JSON.parse(text); renderSettings(); } catch(e){} return; }
+  if (/\/status$/.test(topic)) { bridgeOnline = text.trim() === 'online'; renderHeader(); evalIssues(); return; }
+  if (/\/state$/.test(topic)) {
+    let d;
+    try { d = JSON.parse(text); } catch(e) { return; }
+    if (d && typeof d === 'object') applyState(d, !!(packet && packet.retain));
+  }
+}
+
+/* ================= MQTT ================= */
+function setConn(state, msg){
+  conn = { state, msg: msg || '' };
+  const el = $('connState');
+  const words = {
+    idle: 'Not connected. Showing demo data.',
+    connecting: 'Connecting to ' + cfg.host + '…',
+    connected: 'Connected to the broker. Subscribed to ' + cfg.base + '/#.',
+    offline: 'Disconnected from the broker. Retrying…',
+    error: 'Could not connect: ' + (msg || 'unknown error')
+  };
+  el.textContent = words[state] || '';
+  el.className = 'state' + (state === 'error' ? ' err' : '');
+  renderHeader();
+  evalIssues();
+}
+
+function disconnect(){
+  if (client) { try { client.removeAllListeners(); client.end(true); } catch(e){} client = null; }
+}
+
+function connect(){
+  disconnect();
+  live = null; liveAt = 0; retained = false; bridgeOnline = null; lastSoc = null;
+  if (!window.mqtt) { setConn('error', 'the MQTT library did not load. Check your internet connection or ad blocker.'); renderHome(); return; }
+  const url = 'wss://' + cfg.host + ':' + (cfg.port || '8884') + '/mqtt';
+  setConn('connecting');
+  renderHome();
+  try {
+    client = window.mqtt.connect(url, {
+      username: cfg.user, password: cfg.pass,
+      clientId: 'dash-' + Math.random().toString(16).slice(2, 10),
+      clean: true, keepalive: 30, reconnectPeriod: 4000, connectTimeout: 10000
+    });
+  } catch(e) { setConn('error', e.message); return; }
+  const c = client;
+  c.on('connect', () => {
+    setConn('connected');
+    c.subscribe(cfg.base + '/#', { qos: 0 }, (err, granted) => {
+      if (err) { setConn('error', 'subscribe failed: ' + err.message); return; }
+      if (granted && granted.some(g => g.qos === 128)) setConn('error', 'the broker refused the subscription. Check the authorization rule lets ' + cfg.user + ' subscribe to ' + cfg.base + '/#.');
+    });
+  });
+  c.on('reconnect', () => { if (conn.state !== 'error') setConn('connecting'); });
+  c.on('close', () => { if (conn.state === 'connected' || conn.state === 'connecting') setConn('offline'); });
+  c.on('error', e => {
+    const m = (e && e.message) || String(e);
+    setConn('error', m);
+    if (/auth|username|password|not authori/i.test(m)) { try { c.end(true); } catch(_){} }
+  });
+  c.on('message', (topic, payload, packet) => onMsg(topic, payload.toString(), packet));
+}
+
+/* ================= issue log =================
+   Logs RAISED / CLEARED events while connected in live mode, each with a snapshot of the pack. */
+const LOG_MAX = 500;
+let issues = [];
+try { issues = JSON.parse(store.get('dalyIssues') || '[]'); if (!Array.isArray(issues)) issues = []; } catch(e){ issues = []; }
+const active = {};
+function snapshot(){
+  const d = live; if (!d) return null;
+  const c = Array.isArray(d.cells) ? d.cells.filter(x => x > 0) : [];
+  const mx = c.length ? Math.max.apply(null, c) : d.maxMv, mn = c.length ? Math.min.apply(null, c) : d.minMv;
+  return { v:d.v, a:d.a, soc:d.soc, mx:mx, mn:mn, mxN:d.maxNo, mnN:d.minNo, sp:(mx - mn), t:d.tMax, tl:d.tMin };
+}
+function logEvent(ev, key, sev, text){
+  issues.push({ t:Date.now(), ev:ev, key:key, sev:sev, text:text, s:snapshot() });
+  if (issues.length > LOG_MAX) issues.splice(0, issues.length - LOG_MAX);
+  store.set('dalyIssues', JSON.stringify(issues));
+  if (currentView() === 'issues') renderIssues(); else renderBadge();
+}
+function setCond(key, on, sev, text){
+  if (on && !active[key]) { active[key] = { sev:sev, text:text }; logEvent('RAISED', key, sev, text); }
+  else if (!on && active[key]) { const a = active[key]; delete active[key]; logEvent('CLEARED', key, a.sev, a.text); }
+}
+function evalIssues(){
+  if (mode !== 'live') return;
+  const age = liveAt ? Date.now() - liveAt : 0;
+  setCond('broker', conn.state === 'offline' || conn.state === 'error', 'warn', 'Dashboard lost the broker connection');
+  if (conn.state !== 'connected') return;
+  setCond('esp', bridgeOnline === false, 'crit', 'ESP32 offline (broker Last Will)');
+  const fresh = !!live && !retained;
+  setCond('stale', fresh && age > STALE_MS && bridgeOnline !== false, 'crit', 'No data from ESP32 for over ' + Math.round(STALE_MS/1000) + ' s');
+  if (!fresh || age > STALE_MS) return;
+  const d = live, sn = snapshot();
+  setCond('ble', d.ble === 0, 'warn', 'ESP32 lost Bluetooth link to the BMS');
+  const sp = sn ? sn.sp : 0;
+  const mxv = sn ? Number(sn.mx) : NaN, mnv = sn ? Number(sn.mn) : NaN;
+  if (d.ble !== 0) {
+    setCond('cell-hi-w', mxv > 3650 && mxv <= 3700, 'warn', 'A cell is above 3.65 V (the LiFePO4 maximum)');
+    setCond('cell-hi-c', mxv > 3700, 'crit', 'A cell is above 3.70 V');
+    setCond('cell-lo-w', mnv > 0 && mnv < 2800 && mnv >= 2500, 'warn', 'A cell is below 2.8 V');
+    setCond('cell-lo-c', mnv > 0 && mnv < 2500, 'crit', 'A cell is below 2.5 V');
+  }
+  setCond('imb-crit', sp > DIFF_CRIT, 'crit', 'Cell imbalance above ' + DIFF_CRIT + ' mV');
+  setCond('imb-warn', sp > DIFF_WARN && sp <= DIFF_CRIT, 'warn', 'Cell imbalance above ' + DIFF_WARN + ' mV');
+  const now = {};
+  bmsAlarms(d).forEach(a => { now['alm:' + a.text] = a; });
+  Object.keys(now).forEach(k => setCond(k, true, now[k].sev, 'BMS alarm: ' + now[k].text));
+  Object.keys(active).filter(k => k.indexOf('alm:') === 0 && !now[k]).forEach(k => setCond(k, false));
+}
+function snapText(s){
+  if (!s) return '';
+  return f1(Number(s.v)) + ' V · ' + f1(Number(s.a)) + ' A · SOC ' + f1(Number(s.soc)) + '% · cells ' + s.mn + '–' + s.mx + ' mV (Δ' + s.sp + ', low #' + s.mnN + ', high #' + s.mxN + ') · ' + s.t + '/' + s.tl + ' °C';
+}
+function fullTime(t){ const d = new Date(t); return d.getFullYear() + '-' + pad2(d.getMonth()+1) + '-' + pad2(d.getDate()) + ' ' + clock(t); }
+function renderBadge(){
+  const n = Object.keys(active).length, b = $('iBadge');
+  b.hidden = !n; b.textContent = n;
+}
+function renderIssues(){
+  renderBadge();
+  setText('iOpen', String(Object.keys(active).length));
+  setText('iCnt', String(issues.length));
+  setText('iSince', issues.length ? fullTime(issues[0].t).slice(5, 16) : '—');
+  const ul = $('evList'); ul.textContent = '';
+  if (!issues.length) { const li = document.createElement('li'); li.textContent = 'No issues logged yet.'; ul.appendChild(li); return; }
+  issues.slice(-150).reverse().forEach(e => {
+    const li = document.createElement('li');
+    const r = document.createElement('div'); r.className = 'r1';
+    const tm = document.createElement('time'); tm.textContent = fullTime(e.t);
+    const tag = document.createElement('span'); tag.className = 'tag ' + (e.ev === 'CLEARED' ? 'ok' : e.ev === 'EVENT' ? '' : e.sev); tag.textContent = e.ev;
+    const tx = document.createElement('span'); tx.textContent = e.text;
+    r.appendChild(tm); r.appendChild(tag); r.appendChild(tx); li.appendChild(r);
+    if (e.s) { const sn = document.createElement('div'); sn.className = 'snap'; sn.textContent = snapText(e.s); li.appendChild(sn); }
+    const sb = document.createElement('button'); sb.type = 'button'; sb.className = 'evshare'; sb.textContent = 'Share this event';
+    sb.addEventListener('click', () => shareText(reportText(e), 'Battery fault event'));
+    li.appendChild(sb);
+    ul.appendChild(li);
+  });
+}
+function hexWords(h){ return String(h || '').replace(/(....)/g, '$1 ').trim(); }
+function reportText(only){
+  const L = [], d = live, now = Date.now();
+  const reg = regTable();
+  L.push('BATTERY FAULT REPORT' + (only ? ' (single event)' : ''));
+  L.push('Generated: ' + fullTime(now) + ' (local time)');
+  L.push('');
+  L.push('BATTERY');
+  L.push('Name: ' + (cfg.name || 'My battery'));
+  L.push('Type: 16S LiFePO4, 51.2 V nominal, 100 Ah, Daly Smart BMS 100 A');
+  L.push('Serial number: ' + (details.serial || 'not entered'));
+  L.push('Battery code: ' + (details.code || 'not entered'));
+  L.push('BMS software: ' + (details.sw || 'not entered'));
+  if (details.notes) L.push('Notes: ' + details.notes);
+  L.push('Monitoring: ESP32 reads the BMS over Bluetooth (read only), one reading every 5 s.');
+  if (d) {
+    const k = snapshot();
+    L.push('');
+    L.push('LATEST READINGS' + (liveAt ? ' (' + fullTime(liveAt) + ')' : ''));
+    L.push('Pack ' + f1(Number(d.v)) + ' V, current ' + f1(Number(d.a)) + ' A, SOC ' + f1(Number(d.soc)) + ' %, remaining ' + f1(Number(d.remAh)) + ' Ah, cycles ' + d.cycles);
+    if (Array.isArray(d.cells)) L.push('Cells (mV): ' + d.cells.map((c,i) => (i+1) + '=' + c).join(' '));
+    if (k) L.push('Cell difference ' + k.sp + ' mV (lowest #' + k.mnN + ' ' + k.mn + ', highest #' + k.mxN + ' ' + k.mx + ')');
+    L.push('Temperatures: max ' + d.tMax + ' C, min ' + d.tMin + ' C' + (Array.isArray(d.temps) ? ', sensors ' + d.temps.join('/') : ''));
+    if (typeof d.fault === 'string') L.push('BMS fault flags (raw): ' + hexWords(d.fault));
+    { const al = bmsAlarms(d); L.push('BMS alarms decoded per the Daly flag layout' + (typeof d.alarm === 'string' ? '' : ' (read from the fault registers; byte order confirmed by one real event on 15 Nov 2026, other bits not yet confirmed)') + ': ' + (al.length ? al.map(a => a.text).join('; ') : 'none')); }
+    if (typeof d.regs === 'string') L.push('Raw register payload (16-bit words): ' + hexWords(d.regs));
+    if (d._registerMap && d._registerMap[0x004D] !== undefined) L.push('0x004D raw=' + d._registerMap[0x004D] + ' (balancing status not inferred).');
+    if (d._registerMap && d._registerMap[0x004F] !== undefined) L.push('0x004F raw=' + d._registerMap[0x004F] + ' (balancing cell decoding not verified).');
+    if (typeof d.alarm === 'string') L.push('BMS alarm flags (raw): ' + hexWords(d.alarm));
+    if (d.chg !== undefined) L.push('Charge MOS ' + (d.chg ? 'ON' : 'OFF') + ', discharge MOS ' + (d.dsg ? 'ON' : 'OFF') + ', balancing ' + (d.bal ? 'active' : 'off'));
+  }
+  const act = Object.keys(active);
+  L.push('');
+  L.push('OPEN ISSUES NOW: ' + (act.length ? '' : 'none'));
+  act.forEach(k => L.push('- ' + active[k].text));
+  L.push('');
+  if (only) {
+    L.push('EVENT');
+    L.push(fullTime(only.t) + '  ' + only.ev + '  [' + only.sev + ']  ' + only.text + (only.s ? '\n    ' + snapText(only.s) : ''));
+  } else {
+    L.push('EVENT LOG (' + issues.length + ' events, newest last)');
+    issues.slice(-150).forEach(e => L.push(fullTime(e.t) + '  ' + e.ev + '  [' + e.sev + ']  ' + e.text + (e.s ? '\n    ' + snapText(e.s) : '')));
+    if (!issues.length) L.push('No events logged on this device yet.');
+  }
+  if (reg.length) {
+    L.push('');
+    L.push('BMS SETTINGS REGISTERS (raw, address = value)');
+    L.push(reg.map(r => '0x' + r[0].toString(16).toUpperCase().padStart(4,'0') + '=' + r[1]).join('  '));
+  }
+  L.push('');
+  L.push(reviewText());
+  L.push('');
+  L.push('Notes: imbalance limits (' + DIFF_WARN + '/' + DIFF_CRIT + ' mV) are monitor advisories, not BMS alarms. Raw flag bytes are included so the manufacturer can decode them.');
+  return L.join('\n');
+}
+function shortReport(){
+  const d = live, L = ['Battery fault report (' + fullTime(Date.now()) + ')', (cfg.name || 'Battery') + ', 16S 100Ah LiFePO4, Daly BMS, SN ' + (details.serial || 'n/a')];
+  if (d) L.push('Now: ' + f1(Number(d.v)) + ' V, ' + f1(Number(d.a)) + ' A, SOC ' + f1(Number(d.soc)) + ' %, cell diff ' + (snapshot() ? snapshot().sp : '?') + ' mV');
+  const act = Object.keys(active); L.push('Open issues: ' + (act.length ? act.map(k => active[k].text).join('; ') : 'none'));
+  issues.slice(-8).forEach(e => L.push(fullTime(e.t).slice(5) + ' ' + e.ev + ' ' + e.text));
+  L.push('Full report with all readings is attached/available on request.');
+  return L.join('\n');
+}
+async function shareText(text, title){
+  const file = new File([text], 'battery-fault-report.txt', { type:'text/plain' });
+  const csv = new File([csvText()], 'battery-fault-log.csv', { type:'text/csv' });
+  try {
+    if (navigator.share) {
+      if (navigator.canShare && navigator.canShare({ files:[file, csv] })) await navigator.share({ title, text: shortReport(), files:[file, csv] });
+      else await navigator.share({ title, text });
+      setText('iMsg', 'Shared.'); return;
+    }
+  } catch(e) { if (e && e.name === 'AbortError') return; }
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(() => setText('iMsg', 'Sharing is not available in this browser, so the report was copied. Paste it into WhatsApp or email.'), () => setText('iMsg', 'Sharing is blocked. Use Download CSV.'));
+  else setText('iMsg', 'Sharing is not available here. Use Download CSV.');
+}
+function contactKind(){
+  const c = (details.contact || '').trim();
+  if (c.indexOf('@') > 0) return ['mail', c];
+  const dig = c.replace(/[^\d]/g, ''); if (dig.length >= 8 && dig.length <= 15) return ['wa', dig];
+  return ['', ''];
+}
+function csvText(){
+  const q = x => '"' + String(x == null ? '' : x).replace(/"/g, '""') + '"';
+  const rows = [['time_local','event','severity','description','pack_v','current_a','soc_pct','cell_min_mv','cell_max_mv','spread_mv','low_cell','high_cell','temp_max_c','temp_min_c']];
+  issues.forEach(e => { const s = e.s || {}; rows.push([fullTime(e.t), e.ev, e.sev, e.text, s.v, s.a, s.soc, s.mn, s.mx, s.sp, s.mnN, s.mxN, s.t, s.tl]); });
+  return rows.map(r => r.map(q).join(',')).join('\r\n');
+}
+$('setCopy').addEventListener('click', () => {
+  if (!settingsFrames && !regTable().length) { setText('setMsg', 'No settings received yet.'); return; }
+  const rowsC = regTable();
+  const t = rowsC.length ? rowsC.map(r => '0x' + r[0].toString(16).toUpperCase().padStart(4,'0') + ' = ' + r[1]).join('\n')
+                         : Object.keys(settingsFrames).sort().map(k => k + ' ' + settingsFrames[k]).join('\n');
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(t).then(() => setText('setMsg', 'Settings copied.'), () => setText('setMsg', 'Copy was blocked by the browser.'));
+  else setText('setMsg', 'Copy was blocked by the browser.');
+});
+$('iCsv').addEventListener('click', () => {
+  const blob = new Blob([csvText()], { type:'text/csv' });
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+  a.download = 'daly-bms-issues-' + fullTime(Date.now()).slice(0,10) + '.csv';
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+});
+$('iCopy').addEventListener('click', () => {
+  const txt = reportText(), done = ok => setText('iMsg', ok ? 'Report copied. Paste it into an email or chat to the manufacturer.' : 'Copy was blocked by the browser. Use Download CSV instead.');
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(txt).then(() => done(true), () => done(false)); else done(false);
+});
+$('iShare').addEventListener('click', () => shareText(reportText(), 'Battery fault report'));
+$('iWa').addEventListener('click', () => {
+  const k = contactKind(); window.open('https://wa.me/' + (k[0] === 'wa' ? k[1] : '') + '?text=' + encodeURIComponent(shortReport()), '_blank');
+  setText('iMsg', 'WhatsApp opened with a short summary. Use Share fault report to send the full report and CSV as files.');
+});
+$('iMail').addEventListener('click', () => {
+  const k = contactKind(), body = reportText();
+  location.href = 'mailto:' + (k[0] === 'mail' ? k[1] : '') + '?subject=' + encodeURIComponent('Battery fault report') + '&body=' + encodeURIComponent(body.length > 1800 ? shortReport() : body);
+  setText('iMsg', 'Email opened. For the full report with attachments, use Share fault report and choose your email app.');
+});
+$('iClear').addEventListener('click', () => {
+  if (!issues.length || !confirm('Clear the whole issue log?')) return;
+  issues = []; store.set('dalyIssues', '[]'); renderIssues();
+});
+
+/* ================= views ================= */
+const VIEWS = ['home','trend','hist','issues','setup'];
+function currentView(){ const h = location.hash.replace('#',''); return VIEWS.indexOf(h) >= 0 ? h : 'home'; }
+function showView(){
+  const v = currentView();
+  VIEWS.forEach(n => {
+    $('v-' + n).hidden = n !== v;
+    const t = $('t-' + n); t.classList.toggle('on', n === v);
+    if (n === v) t.setAttribute('aria-current', 'page'); else t.removeAttribute('aria-current');
+  });
+  if (v === 'trend') renderTrend();
+  if (v === 'issues') renderIssues();
+  window.scrollTo(0, 0);
+}
+window.addEventListener('hashchange', showView);
+
+/* ================= setup form ================= */
+function fillForm(){
+  $('fHost').value = cfg.host; $('fPort').value = cfg.port; $('fUser').value = cfg.user;
+  $('fPass').value = cfg.pass; $('fDev').value = cfg.base; $('fName').value = cfg.name;
+}
+$('form').addEventListener('submit', e => {
+  e.preventDefault();
+  cfg.host = $('fHost').value.trim().replace(/^[a-z]+:\/\//i, '').replace(/[\/:].*$/, '');
+  cfg.port = $('fPort').value.trim() || '8884';
+  cfg.user = $('fUser').value.trim();
+  cfg.pass = $('fPass').value;
+  cfg.base = $('fDev').value.trim().replace(/[\/#]+$/, '') || 'daly/battery';
+  cfg.name = $('fName').value.trim() || DEFAULT_CFG.name;
+  $('fHost').value = cfg.host;
+  store.set('dalyCfg', JSON.stringify(cfg));
+  if (!cfg.host || !cfg.user || !cfg.pass) { setConn('error', 'enter the host name, username and password.'); return; }
+  mode = 'live';
+  connect();
+  location.hash = '#home';
+});
+$('bDemo').addEventListener('click', () => {
+  disconnect(); mode = 'demo'; live = null; retained = false; bridgeOnline = null;
+  Object.keys(active).forEach(k => delete active[k]); renderBadge();
+  setConn('idle'); renderHome(); location.hash = '#home';
+});
+
+/* ================= saved history (Supabase, read only) ================= */
+let sb = { url:'https://kqfmttbfgxslfdnjmdob.supabase.co', key:'' };
+try { Object.assign(sb, JSON.parse(store.get('dalySb') || '{}')); } catch(e){}
+async function sbGet(path, from, to){
+  const h = { apikey: sb.key, Authorization: 'Bearer ' + sb.key };
+  if (from != null) h.Range = from + '-' + to;
+  const r = await fetch(sb.url.replace(/\/+$/, '') + '/rest/v1/' + path, { headers: h });
+  if (!r.ok && r.status !== 206) throw new Error(r.status === 401 || r.status === 403 ? 'the key was refused (check it is the publishable key)' : 'HTTP ' + r.status);
+  return r.json();
+}
+$('hClear').addEventListener('click', async () => {
+  if (!sb.key) { setText('hcMsg', 'Enter the Supabase key in Setup first.'); return; }
+  const pass = $('hcPass').value;
+  if (!pass) { setText('hcMsg', 'Enter the clear passphrase.'); return; }
+  const days = $('hcRange').value, keep = $('hcKeep').checked;
+  const what = days === 'all' ? 'ALL saved history' : 'saved history older than ' + days + (days === '1' ? ' day' : ' days');
+  if (!confirm('Permanently delete ' + what + (keep ? ' (the fault log is kept)' : ' and the fault log') + ' from the cloud? This cannot be undone.')) return;
+  setText('hcMsg', 'Deleting…');
+  try {
+    const r = await fetch(sb.url.replace(/\/+$/, '') + '/rest/v1/rpc/clear_history', {
+      method: 'POST',
+      headers: { apikey: sb.key, Authorization: 'Bearer ' + sb.key, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ p_pass: pass, p_days: days === 'all' ? null : Number(days), p_keep_events: keep })
+    });
+    const t = await r.text();
+    if (!r.ok) {
+      if (/wrong passphrase/i.test(t)) throw new Error('wrong passphrase');
+      if (r.status === 404 || /clear_history/.test(t)) throw new Error('the clear function is not set up in Supabase yet (run clear_history.sql once)');
+      throw new Error('HTTP ' + r.status);
+    }
+    const j = JSON.parse(t);
+    $('hcPass').value = ''; histPts = null;
+    setText('hcMsg', 'Deleted ' + j.samples + ' readings and ' + j.events + ' fault log events. Load history again to refresh the charts.');
+  } catch(e) { setText('hcMsg', 'Not deleted: ' + e.message + '.'); }
+});
+const HCHARTS = [
+  { host:'hV', val:'hvV', key:'v',  unit:'V',  label:'Pack voltage',  dec:1, zero:false, minSpan:1 },
+  { host:'hA', val:'hvA', key:'a',  unit:'A',  label:'Pack current',  dec:1, zero:true,  minSpan:2 },
+  { host:'hC', val:'hvC', key:'soc', unit:'%', label:'State of charge', dec:1, zero:false, minSpan:5 },
+  { host:'hS', val:'hvS', key:'spread', unit:'mV', label:'Cell spread', dec:0, zero:false, minSpan:20 },
+  { host:'hT', val:'hvT', key:'tm', unit:'°C', label:'Highest temperature', dec:0, zero:false, minSpan:4 }
+];
+let histPts = null;
+function renderHistStats(pts){
+  const box = $('hStats'); box.textContent = '';
+  let inWh = 0, outWh = 0, inAh = 0, outAh = 0;
+  for (let i = 1; i < pts.length; i++) {
+    const dt = (pts[i].t - pts[i-1].t) / 3600000; if (dt > 0.05) continue;
+    const a = pts[i].a, w = pts[i].v * a;
+    if (a > 0) { inWh += w * dt; inAh += a * dt; } else { outWh += -w * dt; outAh += -a * dt; }
+  }
+  const sp = pts.map(p => p.spread).filter(Number.isFinite);
+  const add = (v, l) => { const d = document.createElement('div'); const b = document.createElement('b'); b.textContent = v; d.append(b, document.createTextNode(l)); box.appendChild(d); };
+  add((inWh/1000).toFixed(2) + ' kWh', 'charged in');
+  add((outWh/1000).toFixed(2) + ' kWh', 'discharged out');
+  add(inWh > 0 ? Math.round(outWh / inWh * 100) + ' %' : '—', 'out ÷ in');
+  add(sp.length ? Math.round(Math.max.apply(null, sp)) + ' mV' : '—', 'worst cell spread');
+}
+async function loadHistory(){
+  if (!sb.key) { setText('hMsg', 'Enter the Supabase publishable key in Setup first.'); return; }
+  const days = Number($('hRange').value), since = new Date(Date.now() - days * 86400000).toISOString(), rows = [];
+  setText('hMsg', 'Loading…');
+  try {
+    for (let p = 0; p < 60; p++) {
+      const part = await sbGet('battery_samples?select=ts,v,a,soc,diff_mv,t_max&order=ts.asc&ts=gte.' + encodeURIComponent(since), p * 1000, p * 1000 + 999);
+      part.forEach(r => rows.push(r)); setText('hMsg', 'Loaded ' + rows.length + ' samples…');
+      if (part.length < 1000) break;
+    }
+  } catch(e) { setText('hMsg', 'Could not load: ' + e.message); return; }
+  histPts = rows.map(r => ({ t: Date.parse(r.ts), v: r.v, a: r.a, soc: r.soc, spread: r.diff_mv, tm: r.t_max }));
+  setText('hMsg', histPts.length ? histPts.length + ' saved samples (one per minute).' : 'No saved samples in this period yet.');
+  HCHARTS.forEach(c => drawChart(Object.assign({ pts: histPts }, c)));
+  renderHistStats(histPts);
+}
+$('hLoad').addEventListener('click', loadHistory);
+let savedEvents = [];
+$('hEvLoad').addEventListener('click', async () => {
+  if (!sb.key) { setText('hEvMsg', 'Enter the Supabase publishable key in Setup first.'); return; }
+  setText('hEvMsg', 'Loading…');
+  try {
+    const r = await sbGet('battery_events?select=ts,ev,sev,key,text,snap&order=ts.desc&limit=300');
+    savedEvents = r.reverse().map(x => ({ t: Date.parse(x.ts), ev: x.ev, sev: x.sev, text: x.text, s: x.snap ? { v:x.snap.v, a:x.snap.a, soc:x.snap.soc, sp:x.snap.sp, t:x.snap.t } : null }));
+    const ul = $('hEvList'); ul.textContent = '';
+    if (!savedEvents.length) { const li = document.createElement('li'); li.textContent = 'No faults recorded yet.'; ul.appendChild(li); }
+    savedEvents.slice().reverse().forEach(e => {
+      const li = document.createElement('li'); const r1 = document.createElement('div'); r1.className = 'r1';
+      const tm = document.createElement('time'); tm.textContent = fullTime(e.t);
+      const tag = document.createElement('span'); tag.className = 'tag ' + (e.ev === 'CLEARED' ? 'ok' : e.ev === 'EVENT' ? '' : e.sev); tag.textContent = e.ev;
+      const tx = document.createElement('span'); tx.textContent = e.text; r1.append(tm, tag, tx); li.appendChild(r1);
+      if (e.s) { const sn = document.createElement('div'); sn.className = 'snap'; sn.textContent = f1(Number(e.s.v)) + ' V · ' + f1(Number(e.s.a)) + ' A · SOC ' + f1(Number(e.s.soc)) + '% · spread ' + e.s.sp + ' mV · ' + e.s.t + ' °C'; li.appendChild(sn); }
+      ul.appendChild(li);
+    });
+    setText('hEvMsg', savedEvents.length + ' faults recorded by the cloud.');
+  } catch(e) { setText('hEvMsg', 'Could not load: ' + e.message); }
+});
+$('hEvShare').addEventListener('click', () => {
+  if (!savedEvents.length) { setText('hEvMsg', 'Load the saved faults first.'); return; }
+  const keep = issues; issues = savedEvents; const t = reportText(); issues = keep;
+  shareText(t.replace('BATTERY FAULT REPORT', 'BATTERY FAULT REPORT (cloud-recorded log)'), 'Battery fault report');
+});
+$('sForm').addEventListener('submit', ev => {
+  ev.preventDefault();
+  sb = { url: $('sUrl').value.trim() || sb.url, key: $('sKey').value.trim() };
+  if (/^sb_secret_|service_role/i.test(sb.key)) { sb.key = ''; setText('sMsg', 'That looks like a secret key. Do not use it here. Paste the publishable key instead.'); return; }
+  store.set('dalySb', JSON.stringify(sb)); setText('sMsg', 'Saved.'); setText('hMsg', 'Ready. Press Load history.');
+});
+function fillSb(){ $('sUrl').value = sb.url; $('sKey').value = sb.key; if (sb.key) setText('hMsg', 'Ready. Press Load history.'); }
+
+/* ================= battery details, install, offline ================= */
+function fillDetails(){ $('dSerial').value = details.serial; $('dCode').value = details.code; $('dSw').value = details.sw; $('dContact').value = details.contact; $('dNotes').value = details.notes; }
+$('dForm').addEventListener('submit', ev => {
+  ev.preventDefault();
+  details = { serial:$('dSerial').value.trim(), code:$('dCode').value.trim(), sw:$('dSw').value.trim(), contact:$('dContact').value.trim(), notes:$('dNotes').value.trim() };
+  store.set('dalyDetails', JSON.stringify(details)); renderVersions(); setText('dMsg', 'Saved.');
+});
+let installEv = null;
+window.addEventListener('beforeinstallprompt', ev => { ev.preventDefault(); installEv = ev; $('installCard').hidden = false; });
+$('bInstall').addEventListener('click', () => { if (installEv) { installEv.prompt(); installEv = null; $('installCard').hidden = true; } });
+if ('serviceWorker' in navigator && /^https?:/.test(location.protocol)) navigator.serviceWorker.register('sw.js').catch(() => {});
+
+/* ================= start ================= */
+fillDetails();
+fillSb();
+fillForm();
+showView();
+if (cfg.host && cfg.user && cfg.pass) { mode = 'live'; connect(); } else { mode = 'demo'; renderHome(); }
+renderBadge();
+setInterval(() => { if (mode === 'live') { renderHeader(); evalIssues(); } }, 1000);
+})();
+</script>
+</body>
+</html>
